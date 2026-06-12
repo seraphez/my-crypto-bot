@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 # 1. 網頁頂級配置與【手機/電腦雙模自適應】黑客風 CSS 注入
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | 跨平台完全體",
+    page_title="CryptoHunter | 爆量下單完全體",
     layout="wide"
 )
 
@@ -21,7 +21,6 @@ if "previous_anomalies" not in st.session_state:
 if "trigger_beep" not in st.session_state:
     st.session_state.trigger_beep = False
 
-# ⚡ 核心：注入頂級 RWD 自適應 RWD 樣式，消滅所有閃爍暗化，優化手機方格
 st.markdown("""
     <style>
     div[data-testid="stForm"] { background-color: transparent !important; }
@@ -29,14 +28,13 @@ st.markdown("""
     .stApp { background-color: #0E1117; }
     h1, h2, h3, h4 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
     
-    /* ---------------- 預設：電腦端大方格排版 ---------------- */
     .square-card {
         background-color: #161B22;
         border: 2px solid #30363D;
         border-radius: 15px;
         padding: 22px;
         margin-bottom: 15px;
-        min-height: 220px;
+        min-height: 250px; /* 稍微加高以容納下單建議文字 */
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -44,24 +42,30 @@ st.markdown("""
     .coin-title { font-size: 24px; font-weight: bold; color: #FFF; font-family: 'Courier New', monospace; }
     .coin-price { font-size: 30px; font-weight: bold; color: #00FF66; margin: 8px 0; }
     .coin-change { font-size: 18px; font-weight: bold; }
-    .trend-badge { padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 14px; text-align: center; margin-top: 10px; }
+    .trend-badge { padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 14px; text-align: center; margin-top: 5px; }
+    
+    /* 下單建議文字樣式 */
+    .trade-advice {
+        background-color: #1F2937;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 13px;
+        color: #E5E7EB;
+        margin-top: 10px;
+        border-left: 4px solid #00FFCC;
+        line-height: 1.4;
+    }
 
-    /* ---------------- 手機行動端自適應覆蓋 (螢幕寬度小於 768px) ---------------- */
     @media (max-width: 768px) {
-        .square-card {
-            padding: 15px;
-            min-height: 160px;
-            margin-bottom: 12px;
-            border-radius: 10px;
-        }
+        .square-card { padding: 15px; min-height: 200px; margin-bottom: 12px; border-radius: 10px; }
         .coin-title { font-size: 18px; }
         .coin-price { font-size: 22px; margin: 4px 0; }
         .coin-change { font-size: 15px; }
-        .trend-badge { padding: 6px 10px; font-size: 12px; margin-top: 6px; }
+        .trend-badge { padding: 6px 10px; font-size: 12px; margin-top: 4px; }
+        .trade-advice { font-size: 11px; padding: 8px; margin-top: 6px; }
         h1 { font-size: 22px !important; }
         h2 { font-size: 18px !important; }
         h3 { font-size: 16px !important; }
-        /* 壓縮手機端的元件上下極致間距，防止一頁裝不下 */
         div[data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
     }
     </style>
@@ -77,19 +81,40 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 3. 側邊欄控制台 (手機版會收納在左上角 > 裡面，完美不佔空間)
+# 3. 網址查詢參數記憶機制 (防止手機重新整理後設定洗掉)
+# =====================================================================
+query_params = st.query_parameters
+
+saved_view = query_params.get("view", "📊 自選戰研與 AI 建議")
+view_index = 1 if saved_view == "🚨 突發爆量提醒" else 0
+
+saved_refresh = query_params.get("refresh", "5")
+try: default_refresh = int(saved_refresh)
+except: default_refresh = 5
+
+saved_volume = query_params.get("volume", "0.5")
+try: default_volume = float(saved_volume)
+except: default_volume = 0.5
+
+saved_favs = query_params.get_all("favs")
+if not saved_favs:
+    default_favs = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+else:
+    default_favs = [f"{f}/USDT" if not f.endswith("/USDT") else f for f in saved_favs]
+
+# =====================================================================
+# 4. 側邊欄控制台 (設定與網址自動即時同步)
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
 page_view = st.sidebar.radio(
     "🧭 請選擇主畫面顯示面板",
     ["📊 自選戰研與 AI 建議", "🚨 突發爆量提醒"],
-    index=0
+    index=view_index
 )
 
 st.sidebar.markdown("---")
 
-# 🔒 自動讀取 Secrets API 密鑰
 api_key = None
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
     api_key = st.secrets["GEMINI_API_KEY"]
@@ -108,17 +133,26 @@ def get_all_usdt_symbols():
 
 all_available_cryptos = get_all_usdt_symbols()
 
+valid_defaults = [s for s in default_favs if s in all_available_cryptos]
 fav_cryptos = st.sidebar.multiselect(
     "🎯 設定你的自選監控區",
     options=all_available_cryptos,
-    default=[s for s in ["BTC/USDT", "ETH/USDT", "SOL/USDT"] if s in all_available_cryptos]
+    default=valid_defaults if valid_defaults else [all_available_cryptos[0]]
 )
 
-refresh_interval = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=5)
-alert_volume = st.sidebar.slider("🔊 雷達警報音量", min_value=0.0, max_value=1.0, value=0.5, step=0.1)
+refresh_interval = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=default_refresh)
+alert_volume = st.sidebar.slider("🔊 雷達警報音量", min_value=0.0, max_value=1.0, value=default_volume, step=0.1)
+
+# 即時把最新設定覆寫回 URL 網址列
+st.query_parameters.update({
+    "view": page_view,
+    "refresh": str(refresh_interval),
+    "volume": str(alert_volume),
+    "favs": [s.replace("/USDT", "") for s in fav_cryptos]
+})
 
 # =====================================================================
-# 4. 量化訊號與 Gemini 原始請求引擎
+# 5. 量化與爆量下單建議演算法
 # =====================================================================
 def get_strategy_signal(current, high, low):
     if not high or not low: return "⚪ 建議觀望 (數據不足)", "#888888"
@@ -126,6 +160,18 @@ def get_strategy_signal(current, high, low):
     if current > mid * 1.015: return "🟢 推薦開多 (突破多頭強勢區)", "#00FF66"
     elif current < mid * 0.985: return "🔴 推薦開空 (跌破空頭弱勢區)", "#FF3366"
     return "⚪ 建議觀望 (區間震盪盤整)", "#888888"
+
+# 🎯 【全新演算法】：全自動爆量方格下單狙擊指引
+def get_anomaly_trade_advice(change_pct):
+    if change_pct >= 10.0:
+        return "⚠️ 主力瘋狂強拉！現價拉開極度超買，直接追多極易被埋，建議等待 5 分鐘 K 線回踩均線不破再行切入。"
+    elif 5.0 <= change_pct < 10.0:
+        return "🟢 多頭量能強勢突破！短線具備下單開多條件，防守點精準鎖定在前一根 1 分鐘爆量 K 線的低點。"
+    elif change_pct <= -10.0:
+        return "⚠️ 全網恐慌踩踏砸盤！左側接刀極度危險，下單抄底前必須盯緊 1 分鐘 K 線出現大單爆量止跌訊號。"
+    elif -10.0 < change_pct <= -5.0:
+        return "🔴 空頭大單強力砸盤！短線順勢開空動能充足，下單防守點建立在上方最近的整數關卡或壓力線。"
+    return "⚪ 動能洗盤盤整中，暫不符合狙擊開盤標準。"
 
 def ask_gemini_market_analysis(coin, price, change, signal, vol_24h):
     if not api_key: return "⚠️ 請先配置 Gemini API Key"
@@ -135,7 +181,7 @@ def ask_gemini_market_analysis(coin, price, change, signal, vol_24h):
     正在對目前自選幣進行【即時盤面量化結構調研】：
     - 標的幣種：{coin}/USDT | 當前現價：{price} | 24h漲跌幅：{change}% | 24h總成交額：{vol_24h} | 系統目前量化訊號：{signal}
     請用繁體中文給出極度精簡、一針見血且極具實戰攻擊性的短評報告：
-    1. 拆解該幣目前盤面背後最真實的「主力心理狀態」（例如：主力正在洗盤吸籌、惡意拉高出貨、動能強勢突破，還是散戶恐慌踩踏）。
+    1. 拆解該幣目前盘面背後最真實的「主力心理狀態」（例如：主力正在洗盤吸籌、惡意拉高出貨、動能強勢突破，還是散戶恐慌踩踏）。
     2. 給出【下一個階段最具體的操作開盤方針與潛在埋伏點】，並附帶精準的止損/防守風險提示。
     """
     try:
@@ -146,7 +192,7 @@ def ask_gemini_market_analysis(coin, price, change, signal, vol_24h):
     except Exception as e: return f"⚠️ 網路傳輸異常 ({e})"
 
 # =====================================================================
-# 5. 數據掃描中心
+# 6. 數據掃描中心
 # =====================================================================
 try:
     all_tickers = exchange.fetch_tickers()
@@ -178,7 +224,7 @@ for symbol, ticker in all_tickers.items():
         current_anomaly_symbols.add(coin_clean)
         volume_anomalies.append({"symbol": coin_clean, "price": current_price, "change": change_pct, "volume_str": f"{vol_usdt / 1000000:.1f}M USDT", "volume_usdt": vol_usdt})
 
-# 🎛️ 手機/電腦通用網頁提示音引擎
+# 🎛️ 提示音引擎
 new_anomalies = current_anomaly_symbols - st.session_state.previous_anomalies
 if new_anomalies and alert_volume > 0: st.session_state.trigger_beep = True
 st.session_state.previous_anomalies = current_anomaly_symbols
@@ -191,7 +237,7 @@ if st.session_state.trigger_beep:
     """, unsafe_allow_html=True)
 
 # =====================================================================
-# 6. 主畫面自適應排版 (電腦端自動切成 [6,6]，手機端自動垂直降維)
+# 7. 主畫面雙欄自適應佈局 (不鎖死、不重疊)
 # =====================================================================
 st.title("🏹 CryptoHunter 智能雷達")
 st.markdown("---")
@@ -252,13 +298,14 @@ if page_view == "📊 自選戰研與 AI 建議":
                     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
-# 模式 B：🚨 突發爆量提醒 (大方塊徹底不見，完美分流為下單方格與觀察清單)
+# 模式 B：🚨 突發爆量提醒 (大方塊徹底分流，左側注入實戰下單開盤方針)
 # ---------------------------------------------------------------------
 elif page_view == "🚨 突發爆量提醒":
     
     volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
     half_len = (len(volume_anomalies) + 1) // 2
     
+    # 🟢 左半區：【方格下單備選區】加注全自動操盤下單指引
     with col_left:
         st.subheader("🚨 突發爆量 (左區：方格下單備選)")
         st.markdown("---")
@@ -269,21 +316,29 @@ elif page_view == "🚨 突發爆量提醒":
                 with left_cols[idx % 2]:
                     c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
                     c_sign = "+" if coin['change'] >= 0 else ""
+                    
+                    # 🛠️ 自動生成實戰下單方針
+                    trade_advice = get_anomaly_trade_advice(coin['change'])
+                    
                     st.markdown(f"""
                         <div class="square-card">
                             <div>
                                 <div class="coin-title">🔥 {coin['symbol']}/USDT</div>
                                 <div class="coin-price">${coin['price']:,}</div>
                                 <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']:.2f}%</div>
+                                <div class="trend-badge" style="background-color: #00FFCC22; color: #00FFCC; border: 1px solid #00FFCC;">
+                                    量: {coin['volume_str']}
+                                </div>
                             </div>
-                            <div class="trend-badge" style="background-color: #00FFCC22; color: #00FFCC; border: 1px solid #00FFCC;">
-                                成交額: {coin['volume_str']}
+                            <div class="trade-advice">
+                                ⚔️ <b>狙擊指令：</b><br>{trade_advice}
                             </div>
                         </div>
                     """, unsafe_allow_html=True)
         else:
             st.success("🔍 全網目前大盤平穩。")
 
+    # 🟡 右半區：【重點觀察名單清單】自選看板在這裡完全清空，排版絕不重疊
     with col_right:
         st.subheader("🚨 突發爆量 (右區：重點觀察名單)")
         st.markdown("---")
@@ -297,6 +352,6 @@ elif page_view == "🚨 突發爆量提醒":
                 st.markdown("---")
 
 # =====================================================================
-# 7. 原生無阻斷計時刷新器 (消滅任何手機端、網頁端的暗化閃爍)
+# 8. 原生無阻斷計時刷新器 (全天候高亮流暢跳動)
 # =====================================================================
 st_autorefresh(interval=refresh_interval * 1000, key="crypto_hunter_heartbeat")
