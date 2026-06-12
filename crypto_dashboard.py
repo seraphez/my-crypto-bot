@@ -9,7 +9,7 @@ import google.generativeai as genai
 # 1. 網頁頂級配置
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | AI 雙核心獵手",
+    page_title="CryptoHunter | 全幣種 AI 獵手",
     page_icon="🏹",
     layout="wide"
 )
@@ -47,8 +47,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏹 CryptoHunter AI 雙核心獵手系統")
-st.markdown("`[雷達模式: 獨立分割看板]` 自選幣種已升級為正方形大面板，右側即時偵測全網爆量異動標的。")
+st.title("🏹 CryptoHunter AI 全幣種智能系統")
+st.markdown("`[雷達模式: 全市場解鎖]` 現在你可以自選追蹤交易所上的任何幣種，右側維持異常暴動偵測。")
 
 # =====================================================================
 # 3. 交易所與 AI 初始化（安全防禦機制）
@@ -60,7 +60,6 @@ def get_exchange():
 exchange = get_exchange()
 
 # --- 【安全密鑰讀取機制】 ---
-# 優先嘗試讀取 Streamlit 雲端的 Secrets
 if "GEMINI_API_KEY" in st.secrets:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
@@ -69,7 +68,7 @@ else:
 # 側邊欄控制台
 st.sidebar.header("⚙️ 獵手核心配置")
 
-# 防呆密鑰輸入框：如果雲端沒設定 Key，就在側邊欄輸入，方便本機測試
+# 防呆密鑰輸入框
 if not GEMINI_API_KEY:
     st.sidebar.markdown("### 🔑 AI 密鑰配置")
     user_key = st.sidebar.text_input("請輸入 Gemini API Key", type="password", help="請至 Google AI Studio 申請免費 Key")
@@ -77,26 +76,39 @@ if not GEMINI_API_KEY:
         GEMINI_API_KEY = user_key
 
 # 串接 AI 診斷引擎
+has_ai = False
 if GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         has_ai = True
     except:
         has_ai = False
-else:
-    has_ai = False
 
 # =====================================================================
-# 4. 側邊欄其他參數設定
+# 4. 【升級核心】動態獲取全市場所有幣種名單
 # =====================================================================
+@st.cache_data(ttl=3600) # 每小時自動更新一次幣種清單即可，不用每次刷新都抓
+def get_all_usdt_symbols():
+    try:
+        markets = exchange.load_markets()
+        # 篩選出所有以 /USDT 結尾，且不是期權或交割合約的現貨/永續標的
+        symbols = [symbol for symbol in markets.keys() if symbol.endswith('/USDT') and ':' not in symbol]
+        return sorted(symbols) # 排序，方便使用者找幣
+    except:
+        # 萬一交易所連線失敗的備用清單
+        return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT"]
+
+all_available_cryptos = get_all_usdt_symbols()
+
+# 側邊欄其他參數設定
 refresh_interval = st.sidebar.slider("數據脈搏刷新 (秒)", min_value=3, max_value=15, value=5)
 enable_ai = st.sidebar.toggle("🤖 啟動 AI 即時開盤推薦", value=True)
 
-# 自選區要監控的幣
+# 💡 這裡把原本死板的清單，換成剛剛動態抓到的 all_available_cryptos！
 fav_cryptos = st.sidebar.multiselect(
-    "🎯 設定你的自選監控區",
-    ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "PEPE/USDT"],
-    default=["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    "🎯 設定你的自選監控區 (可輸入關鍵字搜尋)",
+    options=all_available_cryptos,
+    default=[s for s in ["BTC/USDT", "ETH/USDT", "SOL/USDT"] if s in all_available_cryptos]
 )
 
 # =====================================================================
@@ -118,7 +130,7 @@ def ask_gemini_analysis(coin, price, change, signal):
     if not has_ai:
         return "⚠️ 請在左側邊欄輸入有效的 Gemini API Key 以啟用 AI 分析。"
     try:
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        model = genai.GenerativeModel(model_name='gemini-1.5-flash')
         prompt = f"""
         你是一位加密貨幣量化操盤專家。
         標的：{coin}/USDT | 現價：{price} | 24h漲跌：{change}% | 系統量化訊號：{signal}
@@ -129,7 +141,7 @@ def ask_gemini_analysis(coin, price, change, signal):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"AI 引擎暫時無法連線 ({e})"
+        return f"AI 引擎連線異動中，正在嘗試重新橋接通道... ({e})"
 
 # =====================================================================
 # 6. 主程式數據循環監控區
@@ -175,83 +187,4 @@ while True:
                     "signal_color": signal_color
                 })
             elif is_anomaly:
-                anomaly_data_list.append({
-                    "異常幣種": symbol.replace('/USDT', ''),
-                    "最新價格": current_price,
-                    "24h 漲跌": change_pct,
-                    "24h 成交額": f"{vol_usdt_24h / 1000000:.1f}M"
-                })
-
-        # 開始渲染前端雙核心畫面
-        with placeholder.container():
-            col_header1, col_header2 = st.columns([3, 1])
-            with col_header1:
-                st.write(f"⏱ *訊號同步時間：* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
-            with col_header2:
-                st.write(f"📡 *數據頻率：* `{refresh_interval}秒/次`")
-                
-            st.markdown("---")
-            
-            # 分割為左（自選大方塊區）、右（異常量通知區）兩大版塊
-            col_left, col_right = st.columns([5, 3])
-            
-            # --- 左半邊：自選正方形大卡片區 ---
-            with col_left:
-                st.subheader("🎯 獵手自選監控（大方塊面板）")
-                if fav_data_list:
-                    # 每 2 個大方塊排成一列
-                    fav_cols = st.columns(2)
-                    for idx, coin in enumerate(fav_data_list):
-                        target_col = fav_cols[idx % 2]
-                        with target_col:
-                            c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
-                            c_sign = "+" if coin['change'] >= 0 else ""
-                            
-                            # 渲染 HTML/CSS 正方形科技卡片
-                            st.markdown(f"""
-                                <div class="square-card">
-                                    <div>
-                                        <div class="coin-title">🪙 {coin['symbol']}/USDT</div>
-                                        <div class="coin-price">${coin['price']:,}</div>
-                                        <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']}%</div>
-                                    </div>
-                                    <div class="trend-badge" style="background-color: {coin['signal_color']}22; color: {coin['signal_color']}; border: 1px solid {coin['signal_color']};">
-                                        {coin['signal_text']}
-                                    </div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # AI 分析報告顯示區
-                            if enable_ai:
-                                if has_ai:
-                                    with st.spinner(f"AI 正在精算 {coin['symbol']}..."):
-                                        ai_msg = ask_gemini_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'])
-                                        st.info(f"🤖 **AI 獵手診斷報告:**\n{ai_msg}")
-                                else:
-                                    st.warning("🔑 請展開左側邊欄輸入 Gemini API Key 以解鎖 AI 開盤報告。")
-                else:
-                    st.info("請在側邊欄勾選加入自選追蹤幣種。")
-                    
-            # --- 右半邊：全網突發異動追蹤區 ---
-            with col_right:
-                st.subheader("🚨 全網突發【異常波動】催化區")
-                if anomaly_data_list:
-                    df_anomaly = pd.DataFrame(anomaly_data_list).sort_values(by="24h 漲跌", ascending=False).set_index("異常幣種")
-                    
-                    def color_anomaly(val):
-                        return 'color: #00FF66; font-weight:bold;' if val > 0 else 'color: #FF3366; font-weight:bold;'
-                    
-                    st.dataframe(
-                        df_anomaly.style.map(color_anomaly, subset=['24h 漲跌']),
-                        use_container_width=True,
-                        height=550
-                    )
-                else:
-                    st.success("🔍 市場目前波動穩定，未偵測到突發爆量異動。")
-                    
-        # 動態調整頻率限制：有開 AI 且有 Key 時拉長更新，防止爆量
-        time.sleep(refresh_interval if not (enable_ai and has_ai) else max(refresh_interval, 8))
-        
-    except Exception as e:
-        st.error(f"📡 數據中斷，自動重連中... Code: {e}")
-        time.sleep(5)
+                anomaly_data_
