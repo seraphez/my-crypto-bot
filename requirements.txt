@@ -1,4 +1,6 @@
+streamlit
 ccxt
-streamlit-autorefresh
 pandas
-requests
+pandas-ta
+scikit-learn
+openai
