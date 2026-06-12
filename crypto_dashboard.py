@@ -93,23 +93,43 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 3. 網址查詢參數記憶機制
+# 3. 【新舊版本相容】網址查詢參數記憶機制（徹底解決 AttributeError）
 # =====================================================================
-query_params = st.query_parameters()
+try:
+    # 嘗試 1：新版 Streamlit 物件用法 (不加括號)
+    if hasattr(st, "query_parameters") and not callable(st.query_parameters):
+        query_dict = st.query_parameters
+    # 嘗試 2：過渡版本用法 (加括號)
+    elif hasattr(st, "query_parameters") and callable(st.query_parameters):
+        query_dict = st.query_parameters()
+    # 嘗試 3：完全老舊版本相容
+    else:
+        query_dict = st.experimental_get_query_params()
+except:
+    query_dict = {}
 
-saved_view = query_params.get("view", "📊 自選戰研與 AI 建議")
+# 安全取得網址參數值
+saved_view = query_dict.get("view", "📊 自選戰研與 AI 建議")
+if isinstance(saved_view, list): saved_view = saved_view[0]
 view_index = 1 if saved_view == "🚨 突發爆量提醒" else 0
 
-saved_refresh = query_params.get("refresh", "5")
+saved_refresh = query_dict.get("refresh", "5")
+if isinstance(saved_refresh, list): saved_refresh = saved_refresh[0]
 try: default_refresh = int(saved_refresh)
 except: default_refresh = 5
 
-saved_volume = query_params.get("volume", "0.5")
+saved_volume = query_dict.get("volume", "0.5")
+if isinstance(saved_volume, list): saved_volume = saved_volume[0]
 try: default_volume = float(saved_volume)
 except: default_volume = 0.5
 
-if "favs" in query_params:
-    raw_favs = query_params.get_all("favs") if hasattr(query_params, "get_all") else query_params["favs"]
+# 處理多選自選清單
+if "favs" in query_dict:
+    if hasattr(query_dict, "get_all"):
+        raw_favs = query_dict.get_all("favs")
+    else:
+        raw_favs = query_dict["favs"]
+    
     if isinstance(raw_favs, str): raw_favs = [raw_favs]
     default_favs = [f"{f}/USDT" if not f.endswith("/USDT") else f for f in raw_favs]
 else:
@@ -156,17 +176,25 @@ fav_cryptos = st.sidebar.multiselect(
 refresh_interval = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=default_refresh)
 alert_volume = st.sidebar.slider("🔊 雷達警報音量", min_value=0.0, max_value=1.0, value=default_volume, step=0.1)
 
-st.query_parameters.update({
-    "view": page_view,
-    "refresh": str(refresh_interval),
-    "volume": str(alert_volume),
-    "favs": [s.replace("/USDT", "") for s in fav_cryptos]
-})
+# 安全寫回 URL
+try:
+    new_params = {
+        "view": page_view,
+        "refresh": str(refresh_interval),
+        "volume": str(alert_volume),
+        "favs": [s.replace("/USDT", "") for s in fav_cryptos]
+    }
+    if hasattr(st, "query_parameters"):
+        st.query_parameters.update(new_params)
+    else:
+        st.experimental_set_query_params(**new_params)
+except:
+    pass
 
 st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
 
 # =====================================================================
-# 5. 量化與爆量動能演算法 (結合下單方針)
+# 5. 量化與爆量動能演算法 (結合分析與下單方針)
 # =====================================================================
 def get_strategy_signal(current, high, low):
     if not high or not low: return "⚪ 數據不足 (暫無訊號)", "#888888"
@@ -175,7 +203,6 @@ def get_strategy_signal(current, high, low):
     elif current < mid * 0.985: return "🔴 空頭弱勢 (跌破中軌區間)", "#FF3366"
     return "⚪ 區間盤整 (處於波動中軌)", "#888888"
 
-# 🎯 量化分析與計劃下單方針引擎
 def get_dynamic_analysis_and_plan(change_pct):
     if change_pct >= 10.0:
         analysis = "📊 <b>量化結構：</b>主力瘋狂強拉，K線極速拉離 5EMA 均線，短線呈現極度超買，強烈散戶跟風盤湧入。"
@@ -322,7 +349,6 @@ else:
                 c_color = "#00FF66" if anomaly['change'] >= 0 else "#FF3366"
                 c_sign = "+" if anomaly['change'] >= 0 else ""
                 
-                # 取得該代幣的實時量化結構分析與下單計劃
                 analysis_text, plan_text = get_dynamic_analysis_and_plan(anomaly['change'])
                 
                 card_html = f"""
