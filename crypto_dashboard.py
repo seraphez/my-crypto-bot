@@ -13,13 +13,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🧠 全面綁定記憶體鎖，防止自動刷新時重置設定或反覆扣除 AI 額度
-if "refresh_val" not in st.session_state:
-    st.session_state.refresh_val = 5
-if "user_favs" not in st.session_state:
-    st.session_state.user_favs = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+# 🧠 【防跑針與 AI 鎖定核心】初始化絕對持久化記憶體
+if "real_favs" not in st.session_state:
+    st.session_state.real_favs = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+if "real_refresh" not in st.session_state:
+    st.session_state.real_refresh = 5
 if "single_coin_ai" not in st.session_state:
-    st.session_state.single_coin_ai = {} # 用來存放每一個幣獨立的 AI 分析結果
+    st.session_state.single_coin_ai = {}
 
 st.markdown("""
     <style>
@@ -27,12 +27,6 @@ st.markdown("""
     .stApp div[data-testid="stVerticalBlock"] > div { opacity: 1 !important; }
     .stApp { background-color: #0E1117; }
     h1, h2, h3, h4 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
-    
-    @media (max-width: 768px) {
-        h1 { font-size: 22px !important; }
-        h2 { font-size: 18px !important; }
-        h3 { font-size: 16px !important; }
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -45,8 +39,18 @@ def get_exchange():
 
 exchange = get_exchange()
 
+@st.cache_data(ttl=3600)
+def get_all_usdt_symbols():
+    try:
+        markets = exchange.load_markets()
+        return sorted([s for s in markets.keys() if s.endswith('/USDT') and ':' not in s])
+    except:
+        return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
+
+all_available_cryptos = get_all_usdt_symbols()
+
 # =====================================================================
-# 3. 側邊欄控制台 (設定與狀態完全鎖定，徹底解決跳針 Bug)
+# 3. 側邊欄控制台 (手動存檔死鎖機制，100% 根除自動刷新跑針的 Bug)
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
@@ -58,39 +62,40 @@ else:
     user_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="AIzaSy...")
     if user_key: api_key = user_key
 
-@st.cache_data(ttl=3600)
-def get_all_usdt_symbols():
-    try:
-        markets = exchange.load_markets()
-        return sorted([s for s in markets.keys() if s.endswith('/USDT') and ':' not in s])
-    except:
-        return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
+st.sidebar.markdown("### 🛠️ 盤面參數設定")
 
-all_available_cryptos = get_all_usdt_symbols()
+# 安全過濾器
+valid_defaults = [s for s in st.session_state.real_favs if s in all_available_cryptos]
+if not valid_defaults:
+    valid_defaults = [all_available_cryptos[0]]
 
-# 核心修正：利用 Widget Session State 雙向綁定，不給 default 參數二次複寫的機會
-def on_favs_change():
-    st.session_state.user_favs = st.session_state.select_favs
-
-if "select_favs" not in st.session_state:
-    st.session_state.select_favs = [s for s in st.session_state.user_favs if s in all_available_cryptos]
-
-# 🎯 這邊勾選的順序，就是你的自選幣排序
-st.sidebar.multiselect(
-    "🎯 自選監控區 (按勾選先後順序進行自訂排序)",
+# 多選框與滑桿只作為「UI 輸入端」，絕不讓它們自動複寫記憶體
+ui_favs = st.sidebar.multiselect(
+    "🎯 自選監控區 (按勾選先後順序排序)",
     options=all_available_cryptos,
-    key="select_favs",
-    on_change=on_favs_change
+    default=valid_defaults
 )
 
-# 🎯 刷新頻率綁定 key，自動刷新時絕對死鎖，不還原
-st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, key="refresh_val")
+ui_refresh = st.sidebar.slider(
+    "數據脈搏刷新頻率 (秒)", 
+    min_value=3, 
+    max_value=15, 
+    value=st.session_state.real_refresh
+)
 
-# 自動刷新器安全啟動 (完全使用記憶體鎖定的數值)
-st_autorefresh(interval=st.session_state.refresh_val * 1000, key="datarefresh")
+# 🎯 【殺手鐧】只有按下這個按鈕，設定才會寫入記憶體！自動刷新時這段完全凍結，設定絕對不可能再跑掉
+if st.sidebar.button("💾 鎖定自選與刷新頻率", use_container_width=True):
+    if ui_favs:
+        st.session_state.real_favs = ui_favs
+    st.session_state.real_refresh = ui_refresh
+    st.sidebar.success("儲存成功！記憶體已死鎖")
+    st.rerun()
+
+# 自動刷新器安全啟動 (死死鎖定實時記憶體的值，不受 UI 元件重製影響)
+st_autorefresh(interval=st.session_state.real_refresh * 1000, key="hunter_heartbeat_fixed_v2")
 
 # =====================================================================
-# 4. Gemini 單幣精準戰研調研函數 (只有你手動點擊時才會觸發)
+# 4. Gemini 單幣精準戰研調研函數 (物理防卡死、防超限)
 # =====================================================================
 def ask_gemini_single_coin(coin, price, change, vol_str):
     if not api_key: return "⚠️ 請先配置 Gemini API Key"
@@ -101,8 +106,8 @@ def ask_gemini_single_coin(coin, price, change, vol_str):
     正在對指定幣種進行個別調研：
     - 標的幣種：{coin}/USDT | 當前現價：{price} | 24h漲跌幅：{change}% | 24h總成交額：{vol_str}
     
-    請用繁體中文給出極度精簡、直擊痛點的短評報告：
-    1. 【主力心理學】：拆解背後最真實的「主力心理狀態」（例如：主力正在洗盤吸籌、拉高出貨、動能突破，還是散戶恐慌踩踏）。
+    請用繁體中文給出極度精簡、一針見血的實戰報告：
+    1. 【主力心理學】：拆解目前盤面背後最真實的「主力心理狀態」（洗盤吸籌、拉高出貨、動能突破、散戶踩踏）。
     2. 【下單機會精確提醒】：如果有明確的下單機會，請用【🔥 突發下單機會提醒】開頭給出具體多空方向與防守點！如果沒有，請提示觀望。
     """
     try:
@@ -113,7 +118,7 @@ def ask_gemini_single_coin(coin, price, change, vol_str):
     except Exception as e: return f"⚠️ 網路傳輸異常 ({e})"
 
 # =====================================================================
-# 5. 數據掃描中心 (100% 純自選排序化)
+# 5. 數據掃描中心 (100% 遵從真實自訂排序)
 # =====================================================================
 try:
     all_tickers = exchange.fetch_tickers()
@@ -122,8 +127,8 @@ except:
 
 fav_data_list = []
 
-# 嚴格按照使用者在多選欄勾選排列的順序建立數據
-for symbol in st.session_state.user_favs:
+# 嚴格遵從記憶體鎖定的優先順序建立數據流
+for symbol in st.session_state.real_favs:
     if symbol in all_tickers:
         ticker = all_tickers[symbol]
         current_price = ticker['last']
@@ -138,43 +143,41 @@ for symbol in st.session_state.user_favs:
         })
 
 # =====================================================================
-# 6. 主畫面單一網頁佈局 (由你掌控的 AI 戰研舱)
+# 6. 主畫面佈局 (操作主權完全在你手上的 AI 戰研舱)
 # =====================================================================
 st.title("🏹 CryptoHunter 智能雷達 (純自選戰研艙)")
 st.write(f"⏱ 數據脈搏更新時間：`{datetime.now().strftime('%H:%M:%S')}`")
+st.caption("💡 提示：若修改了左側自選幣或刷新頻率，請記得點擊側邊欄的『💾 鎖定自選』按鈕以寫入記憶體。")
 st.markdown("---")
 
 if fav_data_list:
-    # 採用優雅的排版呈現你自訂排序的自選幣
     for coin in fav_data_list:
         c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
         c_sign = "+" if coin['change'] >= 0 else ""
         
-        # 建立一個幣種區塊
         st.markdown(f"## 🪙 {coin['symbol']} 實時狀態")
         
-        # 橫向並排基本數據與按鈕
         col_meta, col_btn = st.columns([8, 4])
         with col_meta:
             st.markdown(f"#### 現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span> | 24h成交額: `{coin['volume_str']}`", unsafe_allow_html=True)
         
         with col_btn:
-            # 🎯 核心功能：讓使用者自己點選要哪一個自選幣進行 AI 分析
-            if st.button(f"⚡ 進行 {coin['symbol']} 深度 AI 戰研", key=f"btn_{coin['symbol']}", use_container_width=True):
+            # 🎯 【修復 AI 動不了的關鍵】使用獨立 key，並且點擊後立即執行，結果直接鎖死在單獨的 session 欄位中
+            if st.button(f"⚡ 進行 {coin['symbol']} 深度 AI 戰研", key=f"btn_lock_{coin['symbol']}", use_container_width=True):
                 with st.spinner(f"正在調研 {coin['symbol']} 主力鏈上心理學..."):
                     res = ask_gemini_single_coin(coin['symbol'], coin['price'], coin['change'], coin['volume_str'])
                     st.session_state.single_coin_ai[coin['symbol']] = res
+                st.rerun() # 強制刷新畫面，確保 AI 結果不受計時器干擾、立刻渲染
         
-        # 渲染該幣專屬的 AI 分析結果 (存在記憶體中，自動刷新時不會消失，除非你點別台或改自選)
+        # 渲染該幣專屬的 AI 分析結果 (存在記憶體中，自動刷新時絕對不會消失)
         if coin['symbol'] in st.session_state.single_coin_ai:
             analysis_result = st.session_state.single_coin_ai[coin['symbol']]
             
-            # 如果 AI 回覆包含下單機會，自動用醒目的特別色塊高亮呈現
             if "下單機會" in analysis_result or "🔥" in analysis_result:
                 st.warning(analysis_result)
             else:
                 st.info(analysis_result)
                 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("---")
 else:
-    st.info("💡 控制台內空空如也，請先在左側多選欄中勾選並排序你想監控的自選標的。")
+    st.info("💡 控制台內空空如也，請先在左側多選欄中勾選並點擊『儲存鎖定』。")
