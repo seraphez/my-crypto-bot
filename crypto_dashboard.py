@@ -113,4 +113,46 @@ while True:
                 col_left, col_right = st.columns([3, 2])
                 
                 with col_left:
-                    st.markdown("### 📊
+                    st.markdown("### 📊 實時獵手數據大盤")
+                    
+                    # 幫表格加上顏色反饋的樣式（漲變綠、跌變紅）
+                    def color_change(val):
+                        if val > 0:
+                            return 'color: #00FF66; font-weight: bold;' # 螢光綠
+                        elif val < 0:
+                            return 'color: #FF3366; font-weight: bold;' # 螢光紅
+                        return 'color: white;'
+
+                    # 格式化表格顯示
+                    styled_df = df.copy()
+                    styled_df = styled_df.set_index("幣種")
+                    
+                    # 顯示精緻的數據表格
+                    st.dataframe(
+                        styled_df.style.map(color_change, subset=['24h 漲跌'])
+                        .format({"24h 成交額 (USDT)": "{:,.2f}", "最新價格 (USDT)": "{:,}"}),
+                        use_container_width=True,
+                        height=500
+                    )
+                
+                with col_right:
+                    st.markdown("### 🚨 今日漲幅/跌幅敢死隊")
+                    
+                    # 找出漲最多和跌最多的幣
+                    df_gainers = df.sort_values(by="24h 漲跌", ascending=False).head(5)
+                    df_losers = df.sort_values(by="24h 漲跌", ascending=True).head(5)
+                    
+                    st.markdown("**📈 漲幅榜前五 (主力拉升中):**")
+                    for _, r in df_gainers.iterrows():
+                        st.markdown(f"`{r['幣種']}` : **+{r['24h 漲跌']}%** | 價: `{r['最新價格 (USDT)']}`")
+                        
+                    st.markdown("---")
+                    st.markdown("**📉 跌幅榜前五 (恐慌拋售中):**")
+                    for _, r in df_losers.iterrows():
+                        st.markdown(f"`{r['幣種']}` : <span style='color:#FF3366'>**{r['24h 漲跌']}%**</span> | 價: `{r['最新價格 (USDT)']}`", unsafe_allow_html=True)
+
+        time.sleep(refresh_interval)
+        
+    except Exception as e:
+        st.error(f"📡 數據流中斷，正在重新連接... 錯誤代碼: {e}")
+        time.sleep(5)
