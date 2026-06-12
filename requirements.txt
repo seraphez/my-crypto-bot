@@ -1,3 +1,4 @@
 streamlit
 ccxt
 pandas
+python-dotenv
