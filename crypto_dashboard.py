@@ -19,9 +19,11 @@ st.set_page_config(
 # =====================================================================
 st.markdown("""
     <style>
+    /* 全域暗色背景 */
     .stApp { background-color: #0E1117; }
     h1, h2, h3 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
     
+    /* 巨大正方形卡片樣式 */
     .square-card {
         background-color: #161B22;
         border: 2px solid #30363D;
@@ -38,6 +40,7 @@ st.markdown("""
     .coin-price { font-size: 30px; font-weight: bold; color: #00FF66; margin: 8px 0; }
     .coin-change { font-size: 18px; font-weight: bold; }
     
+    /* 策略標籤樣式 */
     .trend-badge { 
         padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 15px; text-align: center; margin-top: 10px;
     }
@@ -60,21 +63,21 @@ exchange = get_exchange()
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
-# 🔒 密鑰輸入框（永遠在側邊欄第一格，絕不隱藏）
+# 🔒 密鑰輸入框（永遠在側邊欄第一格，絕不隱藏，並加入防呆說明）
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    st.sidebar.success("🔑 已從後台 Secrets 自動載入")
+    st.sidebar.success("🔑 已從後台 Secrets 自動載入密鑰")
 else:
     st.sidebar.markdown("### 🔑 認證：請輸入 Gemini API Key")
     GEMINI_API_KEY = st.sidebar.text_input(
         "請貼上你的 API Key：", 
         type="password", 
-        placeholder="AIzaSy..."
+        placeholder="AI Studio 申請的 AIzaSy..."
     )
 
 st.sidebar.markdown("---")
 
-# 功能面板切換（不疊加主畫面）
+# 功能面板切換（完美分離不疊加）
 page_mode = st.sidebar.radio(
     "🧭 請選擇功能面板",
     ["🎯 自選幣大方塊監控", "🚨 全網突發異常波動"],
@@ -108,7 +111,7 @@ if page_mode == "🎯 自選幣大方塊監控":
     )
 
 # =====================================================================
-# 5. 量化與 AI 分析核心邏輯（底層 HTTP 直連，永不報 404）
+# 5. 量化與 AI 分析核心邏輯（底層 HTTP 直連，切換至最穩定的 1.5-pro）
 # =====================================================================
 def get_strategy_signal(current, high, low):
     if not high or not low:
@@ -124,8 +127,8 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
     if not GEMINI_API_KEY:
         return "⚠️ 請先在左側邊欄輸入有效的 Gemini API Key 才能看報告喔！"
     
-    # 直擊 Google 官方最新 v1 通道
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # 🎯 直擊 Google 官方最穩固的 gemini-1.5-pro 通道，全權限開放
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={GEMINI_API_KEY}"
     
     if is_anomaly_mode:
         prompt = f"""
@@ -145,23 +148,21 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
         """
         
     try:
-        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=8)
+        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
         data = response.json()
         
-        # 💡 聰明防呆機制：如果 Google 回傳錯誤代碼
+        # 自動識別並攔截 Google 返回的各類後台錯誤
         if 'error' in data:
             err_msg = data['error'].get('message', '未知錯誤')
             if "API key not valid" in err_msg:
-                return "❌ 【API Key 錯誤】請重新檢查左側輸入的 Key 是否複製完整（開頭通常是 AIzaSy...）。"
+                return "❌ 【API Key 錯誤】請檢查左側輸入的金鑰是否複製完整。"
             elif "Resource has been exhausted" in err_msg:
-                return "⏳ 【免費額度已滿】Google 限制免費 Key 每分鐘只能呼叫幾次，請在左側將「數據脈搏刷新」拉長到 15 秒。"
-            return f"❌ Google 拒絕請求原因: {err_msg}"
+                return "⏳ 【頻率超限】免費 Key 每分鐘呼叫次數有限，請在左側將「數據脈搏刷新」拉長至 12~15 秒。"
+            return f"❌ Google 拒絕原因: {err_msg}"
             
-        # 正常解析
         return data['candidates'][0]['content']['parts'][0]['text']
-        
     except Exception as e:
-        return f"⚠️ 網路傳輸異常，正在重新排隊橋接通道... ({e})"
+        return f"⚠️ 網路傳輸異常，正在重新橋接通道... ({e})"
 
 # =====================================================================
 # 6. 主程式數據循環監控區
@@ -221,9 +222,11 @@ while True:
             st.write(f"⏱ *同步時間：* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}` | 📡 *頻率：* `{refresh_interval}秒/次`")
             st.markdown("---")
             
-            # 模式一：自選監控面板
+            # =================================================================
+            # 模式一：自選監控面板 (100% 全螢幕大方塊)
+            # =================================================================
             if page_mode == "🎯 自選幣大方塊監控":
-                st.subheader("🎯 自選監控面板 (100% 全螢幕大方塊)")
+                st.subheader("🎯 自選監控面板")
                 if fav_data_list:
                     fav_cols = st.columns(3)
                     for idx, coin in enumerate(fav_data_list):
@@ -255,7 +258,9 @@ while True:
                 else:
                     st.info("請在左側邊欄搜尋並勾選想要監控的任何幣種！")
             
-            # 模式二：異常波動面板（帶有 AI 實戰操作建議）
+            # =================================================================
+            # 模式二：異常波動面板 (自帶 AI 實戰操作建議)
+            # =================================================================
             elif page_mode == "🚨 全網突發異常波動":
                 st.subheader("🚨 全網突發【異常波動】追蹤總表")
                 if anomaly_data_list:
@@ -279,6 +284,7 @@ while True:
                     st.markdown("---")
                     st.subheader("⚡ 暴動標的：AI 獵手實戰操作方法")
                     
+                    # 抓前 4 名異動最猛的幣進行深度剖析
                     top_anomalies = sorted(anomaly_data_list, key=lambda x: abs(x['change']), reverse=True)[:4]
                     anom_cols = st.columns(2)
                     for idx, coin in enumerate(top_anomalies):
@@ -307,7 +313,7 @@ while True:
                 else:
                     st.success("🔍 市場目前波動穩定，未偵測到 24h 漲跌超過 ±6% 的突發異動幣種。")
                     
-        # 動態限流防爆
+        # 動態限流：有啟用 AI 且有密鑰時，最低拉伸至 8 秒刷新一次，防止免費 Key 被 Google 封鎖
         time.sleep(refresh_interval if not (enable_ai and GEMINI_API_KEY) else max(refresh_interval, 8))
         
     except Exception as e:
