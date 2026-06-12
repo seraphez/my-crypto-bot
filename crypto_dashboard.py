@@ -124,7 +124,7 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
     if not GEMINI_API_KEY:
         return "⚠️ 請先在左側邊欄輸入有效的 Gemini API Key 才能看報告喔！"
     
-    # 🎯 直擊 Google 官方最新 v1 通道，徹底繞過 SDK 的路徑 Bug
+    # 直擊 Google 官方最新 v1 通道
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     if is_anomaly_mode:
@@ -145,12 +145,23 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
         """
         
     try:
-        # 用底層原生 POST 請求發送
         response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=8)
         data = response.json()
+        
+        # 💡 聰明防呆機制：如果 Google 回傳錯誤代碼
+        if 'error' in data:
+            err_msg = data['error'].get('message', '未知錯誤')
+            if "API key not valid" in err_msg:
+                return "❌ 【API Key 錯誤】請重新檢查左側輸入的 Key 是否複製完整（開頭通常是 AIzaSy...）。"
+            elif "Resource has been exhausted" in err_msg:
+                return "⏳ 【免費額度已滿】Google 限制免費 Key 每分鐘只能呼叫幾次，請在左側將「數據脈搏刷新」拉長到 15 秒。"
+            return f"❌ Google 拒絕請求原因: {err_msg}"
+            
+        # 正常解析
         return data['candidates'][0]['content']['parts'][0]['text']
+        
     except Exception as e:
-        return f"AI 獵手解算超時，請檢查您的 Key 是否正確貼上、或稍後重試。({e})"
+        return f"⚠️ 網路傳輸異常，正在重新排隊橋接通道... ({e})"
 
 # =====================================================================
 # 6. 主程式數據循環監控區
