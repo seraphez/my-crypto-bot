@@ -14,17 +14,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# 🧠 初始化持久化記憶體（核心：防止刷新時設定與 AI 快取洗掉）
+# 🧠 全面綁定記憶體鎖，防止自動刷新時重置設定或反覆扣除 AI 額度
+if "refresh_val" not in st.session_state:
+    st.session_state.refresh_val = 5
 if "user_favs" not in st.session_state:
     st.session_state.user_favs = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
 if "cached_portfolio_analysis" not in st.session_state:
     st.session_state.cached_portfolio_analysis = "💡 等待 AI 進行多幣連通調研..."
 if "last_ai_update" not in st.session_state:
     st.session_state.last_ai_update = 0.0
-if "previous_anomalies" not in st.session_state:
-    st.session_state.previous_anomalies = set()
-if "trigger_beep" not in st.session_state:
-    st.session_state.trigger_beep = False
 
 st.markdown("""
     <style>
@@ -84,28 +82,7 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 3. 網址參數初始化 (僅在第一次載入時啟動，防止後續搶控制權)
-# =====================================================================
-if "url_initialized" not in st.session_state:
-    try:
-        if hasattr(st, "query_parameters") and not callable(st.query_parameters):
-            query_dict = st.query_parameters
-        elif hasattr(st, "query_parameters") and callable(st.query_parameters):
-            query_dict = st.query_parameters()
-        else:
-            query_dict = st.experimental_get_query_params()
-    except:
-        query_dict = {}
-
-    if "favs" in query_dict:
-        raw_favs = query_dict.get_all("favs") if hasattr(query_dict, "get_all") else query_dict["favs"]
-        if isinstance(raw_favs, str): raw_favs = [raw_favs]
-        url_favs = [f"{f}/USDT" if not f.endswith("/USDT") else f for f in raw_favs]
-        if url_favs: st.session_state.user_favs = url_favs
-    st.session_state.url_initialized = True
-
-# =====================================================================
-# 4. 側邊欄控制台
+# 3. 側邊欄控制台 (設定與狀態完全鎖定)
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
@@ -135,9 +112,11 @@ def get_all_usdt_symbols():
         return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
 
 all_available_cryptos = get_all_usdt_symbols()
+
+# 確保預設值合法
 valid_defaults = [s for s in st.session_state.user_favs if s in all_available_cryptos]
 
-# 核心：多選框直接與 session_state 對齊，保留你的自訂排序
+# 🎯 利用 key 屬性直接持久化自選順序，使用者調整才會觸發 session_state 變更
 chosen_favs = st.sidebar.multiselect(
     "🎯 自選監控區 (按勾選先後順序進行自訂排序)",
     options=all_available_cryptos,
@@ -149,21 +128,21 @@ if chosen_favs != st.session_state.user_favs:
     st.session_state.cached_portfolio_analysis = "💡 自選變更，等待下一次 AI 聯通調研計時..."
     st.session_state.last_ai_update = 0.0
 
-refresh_interval = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=5)
-alert_volume = st.sidebar.slider("🔊 雷達警報音量", min_value=0.0, max_value=1.0, value=0.5, step=0.1)
+# 🎯 刷新頻率同樣綁定 key，徹底解決滑桿自動跳針回 5 秒的 Bug
+st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, key="refresh_val")
 
-# 定時刷新器 (徹底移除 url.update 防止控制台滑桿跳針)
-st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
+# 根據持久化記憶體中的時間計時刷新
+st_autorefresh(interval=st.session_state.refresh_val * 1000, key="datarefresh")
 
 # =====================================================================
-# 5. 雷達精簡大概方向演算法
+# 4. 雷達精簡大概方向演算法 (只有在出現下單機會時特別備註)
 # =====================================================================
 def get_rough_direction(change_pct):
-    if change_pct >= 10.0: return "⚠️ ［主力瘋狂強拉］ 短線嚴重超買，留意高位震盪風險", "bull"
-    elif 5.0 <= change_pct < 10.0: return "🟢 ［多頭強勢突破］ 成交量同步放大，具備短線下單動能", "bull"
-    elif change_pct <= -10.0: return "⚠️ ［全網恐慌砸盤］ 鏈式多頭爆倉，出現大單止跌信號前禁止接刀", "bear"
-    elif -10.0 < change_pct <= -5.0: return "🔴 ［空頭大單壓制］ 順勢做空動能充足，防守鎖定最近阻力位", "bear"
-    return "⚪ ［常態籌碼沉澱］ 無明顯方向，維持窄幅洗盤", "neutral"
+    if change_pct >= 10.0: return "⚠️ ［主力瘋狂強拉］ 短線嚴重超買，留意高位歸零針", "bull"
+    elif 5.0 <= change_pct < 10.0: return "🟢 ［多頭強勢突破］ 具備短線右側下單機會，防守鎖定爆量K低點", "bull"
+    elif change_pct <= -10.0: return "⚠️ ［全網恐慌砸盤］ 鏈式爆倉觸發，右側出現止跌量前嚴禁下單抄底", "bear"
+    elif -10.0 < change_pct <= -5.0: return "🔴 ［空頭大單壓制］ 順勢做空動能充足，反彈阻力位即下單機會", "bear"
+    return "⚪ ［常態籌碼沉澱］ 無明顯下單機會，維持窄幅洗盤", "neutral"
 
 def ask_gemini_portfolio_analysis(fav_data_list):
     if not api_key: return "⚠️ 請先配置 Gemini API Key"
@@ -182,7 +161,7 @@ def ask_gemini_portfolio_analysis(fav_data_list):
     
     請將這些自選幣視為一個【完整的連通器戰略組合】，用繁體中文給出極度精簡、直擊痛點的連通調研：
     1. 【資金流向拆解】：這幾個自選幣之間是否存在聯動關係？資金目前正從哪個幣流出、並集中流入哪個幣？
-    2. 【下單機會提醒】：如果有明確的多空不平衡或者資金瘋狂湧入的下單信號，請給出精確提醒，否則提示觀望。
+    2. 【下單機會精確提醒】：如果有明確的多空失衡、主力急迫吸籌、或資金瘋狂灌入的具體下單機會，請在開頭用【🔥 突發下單機會提醒】噴出具體策略！如果沒有，請直接提示觀望，保持專業。
     """
     try:
         response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
@@ -192,7 +171,7 @@ def ask_gemini_portfolio_analysis(fav_data_list):
     except Exception as e: return f"⚠️ 網路傳輸異常 ({e})"
 
 # =====================================================================
-# 6. 數據掃描中心
+# 5. 數據掃描中心
 # =====================================================================
 try:
     all_tickers = exchange.fetch_tickers()
@@ -203,7 +182,7 @@ fav_data_list = []
 volume_anomalies = []
 current_anomaly_symbols = set()
 
-# A. 【自選幣模塊】依使用者的自訂排序建立資料
+# A. 【自選幣排序】精準按照使用者在多選欄點擊的順序迭代
 for symbol in st.session_state.user_favs:
     if symbol in all_tickers:
         ticker = all_tickers[symbol]
@@ -218,7 +197,7 @@ for symbol in st.session_state.user_favs:
             "volume_str": f"{vol_usdt / 1000000:.2f}M USDT", "volume_usdt": vol_usdt
         })
 
-# B. 【全網突發爆量模塊】
+# B. 【全網突發爆量隔離區】
 for symbol, ticker in all_tickers.items():
     if not symbol.endswith('/USDT') or ':' in symbol: continue
     current_price = ticker['last']
@@ -234,26 +213,14 @@ for symbol, ticker in all_tickers.items():
             "volume_str": f"{vol_usdt / 1000000:.1f}M USDT", "volume_usdt": vol_usdt
         })
 
-# 🎛️ 提示音引擎
-new_anomalies = current_anomaly_symbols - st.session_state.previous_anomalies
-if new_anomalies and alert_volume > 0: st.session_state.trigger_beep = True
-st.session_state.previous_anomalies = current_anomaly_symbols
-
-if st.session_state.trigger_beep:
-    st.session_state.trigger_beep = False
-    st.markdown(f"""
-        <audio autoplay><source src="https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav" type="audio/wav"></audio>
-        <script>document.querySelector('audio').volume = {alert_volume};</script>
-    """, unsafe_allow_html=True)
-
 # =====================================================================
-# 7. 主畫面雙欄自適應佈局 (徹底隔離版面，拒絕重疊與死鎖)
+# 6. 主畫面雙欄自適應佈局 (版面乾淨解耦，各回各家)
 # =====================================================================
 st.title("🏹 CryptoHunter 智能雷達")
 st.markdown("---")
 
 # ---------------------------------------------------------------------
-# 模式 A：📊 自選戰研與 AI 建議 (左自選狀態、右邊完全交給 AI 分析)
+# 模式 A：📊 自選戰研與 AI 建議 (左自選、右邊純淨 AI 調研與下單提醒)
 # ---------------------------------------------------------------------
 if page_view == "📊 自選戰研與 AI 建議":
     col_left, col_right = st.columns([6, 6])
@@ -279,9 +246,13 @@ if page_view == "📊 自選戰研與 AI 建議":
         
         if fav_data_list:
             time_now = time.time()
-            # 60 秒快取防禦，防止免費 API 額度爆炸
-            if "💡 Waiting" in st.session_state.cached_portfolio_analysis or (time_now - st.session_state.last_ai_update > 60.0):
-                with st.spinner("正在進行跨市場自選幣資金連通性調研..."):
+            time_diff = time_now - st.session_state.last_ai_update
+            
+            # 提供手動點擊刷新的機制，並且當超過 300 秒(5分鐘)才會在頁面重整時自動請求
+            force_refresh_ai = st.button("⚡ 手動刷新 AI 戰研報告", use_container_width=True)
+            
+            if force_refresh_ai or "💡 Waiting" in st.session_state.cached_portfolio_analysis or (time_diff > 300.0):
+                with st.spinner("正在進行跨市場自選幣資金連通性與下單機會調研..."):
                     res = ask_gemini_portfolio_analysis(fav_data_list)
                     if "❌ 調研失敗" not in res:
                         st.session_state.cached_portfolio_analysis = res
@@ -289,16 +260,21 @@ if page_view == "📊 自選戰研與 AI 建議":
                     else:
                         st.error(res)
             
-            st.info(st.session_state.cached_portfolio_analysis)
+            # 如果 AI 分析中帶有下單機會提示，自動用醒目的特別區塊高亮呈現
+            if "下單機會" in st.session_state.cached_portfolio_analysis or "🔥" in st.session_state.cached_portfolio_analysis:
+                st.warning(st.session_state.cached_portfolio_analysis)
+            else:
+                st.info(st.session_state.cached_portfolio_analysis)
             
-            seconds_left = int(60 - (time_now - st.session_state.last_ai_update))
+            # 精確的冷卻狀態提示，保護你的免費 API 額度
+            seconds_left = int(300 - (time_now - st.session_state.last_ai_update))
             if seconds_left > 0:
-                st.caption(f"⏱ 智能快取安全護盾生效中。 `{seconds_left}秒` 後自動解鎖下一次 AI 連通性調研。")
+                st.caption(f"⏱ 智能快取安全護盾生效中。距離下一次自動調研還有 `{seconds_left}秒`，你也可以點擊上方按鈕隨時手動強制更新。")
         else:
-            st.info("暫無自選幣數據可供分析。")
+            st.info("暫無自選幣數據可供 AI 進行連通分析。")
 
 # ---------------------------------------------------------------------
-# 模式 B：🚨 突發爆量提醒 (全螢幕獨立大方格卡片面板，全網路人爆量幣專屬停機坪)
+# 模式 B：🚨 突發爆量提醒 (全網爆量路人幣的專屬停機坪，附帶大概方向提醒)
 # ---------------------------------------------------------------------
 else:
     st.subheader("🚨 全網突發爆量監控面板 (成交額 > 10M 且 波動 > 5%)")
