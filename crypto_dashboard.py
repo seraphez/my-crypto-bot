@@ -9,7 +9,7 @@ import requests
 # 1. 網頁頂級配置
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | 異常驅動 AI 獵手",
+    page_title="CryptoHunter | 爆量驅動復盤型",
     page_icon="🏹",
     layout="wide"
 )
@@ -20,45 +20,26 @@ st.set_page_config(
 st.markdown("""
     <style>
     .stApp { background-color: #0E1117; }
-    h1, h2, h3 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
+    h1, h2, h3, h4 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
     
-    /* 巨大正方形卡片樣式 */
-    .square-card {
-        background-color: #161B22;
-        border: 2px solid #30363D;
-        border-radius: 15px;
-        padding: 25px;
+    /* 爆量警告卡片 */
+    .volume-anomaly-card {
+        background-color: #1A1C23;
+        border: 2px solid #FF9900;
+        border-radius: 12px;
+        padding: 20px;
         margin-bottom: 15px;
-        min-height: 220px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+        box-shadow: 0 0 12px rgba(255, 153, 0, 0.2);
     }
-    /* 異常暴動卡片樣式：帶有紅色警告外框與微弱呼吸燈效果 */
-    .anomaly-card {
-        background-color: #1A1115;
-        border: 2px solid #FF3366;
-        border-radius: 15px;
-        padding: 25px;
-        margin-bottom: 15px;
-        min-height: 220px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        box-shadow: 0 0 15px rgba(255, 51, 102, 0.3);
-    }
-    .coin-title { font-size: 26px; font-weight: bold; color: #FFF; font-family: 'Courier New', monospace; }
-    .coin-price { font-size: 30px; font-weight: bold; color: #00FF66; margin: 8px 0; }
-    .coin-change { font-size: 18px; font-weight: bold; }
     
-    .trend-badge { 
-        padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 15px; text-align: center; margin-top: 10px;
-    }
+    .coin-title { font-size: 22px; font-weight: bold; color: #FFF; font-family: 'Courier New', monospace; }
+    .coin-price { font-size: 26px; font-weight: bold; color: #00FF66; margin: 5px 0; }
+    .coin-vol { font-size: 16px; color: #FF9900; font-weight: bold; }
+    .coin-change { font-size: 16px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏹 CryptoHunter AI 異常驅動智能監控系統")
+st.title("🏹 CryptoHunter 全網爆量雷達 ＆ AI 復盤系統")
 
 # =====================================================================
 # 3. 交易所初始化
@@ -72,7 +53,7 @@ exchange = get_exchange()
 # =====================================================================
 # 4. 側邊欄控制台
 # =====================================================================
-st.sidebar.header("⚙️ 獵手核心控制台")
+st.sidebar.header("⚙️ 獵手控制台")
 
 # 🔒 密鑰輸入框
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
@@ -87,54 +68,36 @@ else:
     )
 
 st.sidebar.markdown("---")
+refresh_interval = st.sidebar.slider("全網雷達掃描頻率 (秒)", min_value=5, max_value=20, value=8)
 
-# 獲取全市場 USDT 名單
-@st.cache_data(ttl=3600)
-def get_all_usdt_symbols():
-    try:
-        markets = exchange.load_markets()
-        symbols = [symbol for symbol in markets.keys() if symbol.endswith('/USDT') and ':' not in symbol]
-        return sorted(symbols)
-    except:
-        return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"]
-
-all_available_cryptos = get_all_usdt_symbols()
-
-# 自選監控區設定
-fav_cryptos = st.sidebar.multiselect(
-    "🎯 設定你的自選監控區（可多選、打字搜尋）",
-    options=all_available_cryptos,
-    default=[s for s in ["BTC/USDT", "ETH/USDT", "SOL/USDT"] if s in all_available_cryptos]
-)
-
-st.sidebar.markdown("---")
-refresh_interval = st.sidebar.slider("數據脈搏刷新 (秒)", min_value=3, max_value=15, value=5)
+st.sidebar.markdown("""
+### 📡 雷達警戒觸發標準：
+1. 24h 成交額 > **1,000 萬 USDT (10M)**
+2. 24h 漲跌幅絕對值 > **5%**
+*(符合以上條件之幣種將會自動被抓取並亮燈提醒)*
+""")
 
 # =====================================================================
-# 5. AI 分析核心邏輯（底層 HTTP 直連，使用官方最新萬用模型 gemini-2.5-flash）
+# 5. AI 單次復盤鑑定核心邏輯 (gemini-2.5-flash 正式版)
 # =====================================================================
-def get_strategy_signal(current, high, low):
-    if not high or not low:
-        return "⚪ 建議觀望 (數據不足)", "#888888"
-    mid = (high + low) / 2
-    if current > mid * 1.015:
-        return "🟢 推薦開多 (突破多頭強勢區)", "#00FF66"
-    elif current < mid * 0.985:
-        return "🔴 推薦開空 (跌破空頭弱勢區)", "#FF3366"
-    return "⚪ 建議觀望 (區間震盪盤整)", "#888888"
-
-def ask_gemini_anomaly_analysis(coin, price, change):
+def ask_gemini_replay_analysis(coin, price, change, volume, high, low):
     if not GEMINI_API_KEY:
-        return "⚠️ 請先在左側邊欄輸入有效的 Gemini API Key 才能看報告喔！"
+        return "⚠️ 請先在左側邊欄輸入有效的 Gemini API Key 喔！"
     
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"""
-    你現在是精通加密貨幣『山寨幣/妖幣暴動盤』的短線量化操盤專家。
-    當前自選監控標的發生【突發異常波動】：{coin}/USDT | 現價：{price} | 24h漲跌幅：{change}%
-    請用繁體中文給出極精簡且極具攻擊性的 2 句短評：
-    1. 分析此時異常暴漲或暴跌的背後主力心理型態（是拉高出貨、動能突破還是恐慌踩踏）。
-    2. 給出【最具體的操作方法與建議】（例如：切勿追高建議逢高分批進空、短線跟隨動能突破輕倉追多、或是正值極端行情建議冷靜觀望），並附帶精準的止損/風險提示。
+    你現在是精通加密貨幣『突發爆量/主力妖幣異動』的頂級短線量化操盤專家。
+    正在對目前全網焦點爆量標的進行【實戰技術復盤】：
+    - 標的幣種：{coin}/USDT
+    - 當前現價：{price}
+    - 24h漲跌幅：{change}%
+    - 24h成交額：{volume}
+    - 24h最高/最低價：{high} / {low}
+    
+    請用繁體中文給出極精簡、一針見血且極具實戰攻擊性的 2 句短評：
+    1. 拆解該幣「突發爆量」背後的操盤手/主力心理狀態（是機構吸籌、主力拉高出貨、動能突破還是散戶踩踏踩踏）。
+    2. 給出【下一個階段最具體的操作開盤方針與潛在埋伏點】（如：切勿追高建議逢高分批進空、短線跟隨動能突破輕倉追多、或是正值極端行情建議冷靜觀望），並附帶精準的止損/防守提示。
     """
         
     try:
@@ -146,94 +109,131 @@ def ask_gemini_anomaly_analysis(coin, price, change):
             if "API key not valid" in err_msg:
                 return "❌ 【API Key 錯誤】請檢查左側輸入的金鑰。"
             elif "Resource has been exhausted" in err_msg:
-                return "⏳ 【頻率超限】免費額度已滿，系統正在自動降頻排隊。"
+                return "⏳ 【頻率超限】免費額度已滿，請等待 15 秒後再次點擊復盤。"
             return f"❌ Google 拒絕原因: {err_msg}"
             
         return data['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
-        return f"⚠️ 網絡傳輸異常 ({e})"
+        return f"⚠️ 網路傳輸異常 ({e})"
 
 # =====================================================================
-# 6. 主程式數據循環監控區
+# 6. 主畫面佈局分流（左側雷達提醒，右側復盤研究室）
 # =====================================================================
-placeholder = st.empty()
+col_radar, col_replay = st.columns([7, 5])
 
+with col_replay:
+    st.subheader("🔬 AI 策略復盤研究室")
+    st.write("🔍 當左側雷達跳出爆量警報時，可在這裡輸入該幣種進行 AI 單次復盤評估。")
+    
+    # 復盤輸入視窗（讓用戶手動輸入或選擇）
+    replay_coin = st.text_input("輸入要復盤的幣種代號（例如: SOL, DOGE, XRP）", value="SOL").strip().upper()
+    btn_replay = st.button("🏹 啟動 AI 獵手復盤鑑定", use_container_width=True)
+    
+    replay_placeholder = st.container()
+
+# 左側雷達主循環
+with col_radar:
+    st.subheader("🚨 全網突發【爆量異動】主動雷達")
+    radar_placeholder = st.empty()
+
+# =====================================================================
+# 7. 數據循環監控區
+# =====================================================================
 while True:
     try:
         all_tickers = exchange.fetch_tickers()
-        render_data_list = []
+        volume_anomalies = []
+        target_replay_data = None  # 用於儲存當前被復盤幣種的即時數據
         
-        # 只篩選自選幣種
+        # 遍歷全市場篩選「爆量異動幣」
         for symbol, ticker in all_tickers.items():
-            if symbol in fav_cryptos:
-                current_price = ticker['last']
-                change_pct = ticker['percentage'] if ticker['percentage'] is not None else 0.0
-                high_24h = ticker['high']
-                low_24h = ticker['low']
+            if not symbol.endswith('/USDT') or ':' in symbol:
+                continue
                 
-                signal_text, signal_color = get_strategy_signal(current_price, high_24h, low_24h)
-                
-                # 🧠 關鍵核心：判斷該自選幣此時是否「異常波動」(絕對值大於 6%)
-                is_anomaly = True if (change_pct > 6 or change_pct < -6) else False
-                
-                render_data_list.append({
-                    "symbol": symbol.replace('/USDT', ''),
+            current_price = ticker['last']
+            change_pct = ticker['percentage'] if ticker['percentage'] is not None else 0.0
+            high_24h = ticker['high']
+            low_24h = ticker['low']
+            vol_base_24h = ticker['baseVolume'] if ticker['baseVolume'] else 0
+            vol_usdt_24h = ticker['quoteVolume'] if ticker['quoteVolume'] else (vol_base_24h * current_price)
+            
+            coin_clean = symbol.replace('/USDT', '')
+            
+            # 1. 檢查是否符合目前用戶正在復盤的幣種數據
+            if coin_clean == replay_coin:
+                target_replay_data = {
+                    "symbol": coin_clean,
                     "price": current_price,
                     "change": change_pct,
-                    "signal_text": signal_text,
-                    "signal_color": signal_color,
-                    "is_anomaly": is_anomaly
+                    "volume": f"{vol_usdt_24h / 1000000:.2f}M USDT",
+                    "high": high_24h,
+                    "low": low_24h
+                }
+            
+            # 2. 觸發雷達標準：成交額 > 10M 且 漲跌幅絕對值 > 5%
+            if vol_usdt_24h >= 10000000 and (change_pct > 5 or change_pct < -5):
+                volume_anomalies.append({
+                    "symbol": coin_clean,
+                    "price": current_price,
+                    "change": change_pct,
+                    "volume_usdt": vol_usdt_24h,
+                    "volume_str": f"{vol_usdt_24h / 1000000:.1f}M USDT",
+                    "high": high_24h,
+                    "low": low_24h
                 })
 
-        # 開始渲染全螢幕大方塊畫面
-        with placeholder.container():
-            st.write(f"⏱ *同步時間：* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}` | 📡 *頻率：* `{refresh_interval}秒/次`")
+        # 按成交額從大到小排序
+        volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
+
+        # 渲染左側雷達大方塊
+        with radar_placeholder.container():
+            st.write(f"⏱ *雷達動態更新：* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
             st.markdown("---")
             
-            st.subheader("🎯 自選標的監控大區（異常爆量將會自動亮燈觸發 AI）")
-            
-            if render_data_list:
-                fav_cols = st.columns(3)
-                for idx, coin in enumerate(render_data_list):
-                    target_col = fav_cols[idx % 3]
-                    with target_col:
+            if volume_anomalies:
+                # 每排顯示 2 個爆量大方塊
+                radar_cols = st.columns(2)
+                for idx, coin in enumerate(volume_anomalies):
+                    tgt_col = radar_cols[idx % 2]
+                    with tgt_col:
                         c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
                         c_sign = "+" if coin['change'] >= 0 else ""
                         
-                        # 💡 如果異常，換成紅色亮點框框樣式，平時則是低調暗色框
-                        card_class = "anomaly-card" if coin['is_anomaly'] else "square-card"
-                        anomaly_prefix = "🚨 突發異動!! " if coin['is_anomaly'] else ""
-                        
                         st.markdown(f"""
-                            <div class="{card_class}">
-                                <div>
-                                    <div class="coin-title">{anomaly_prefix}🪙 {coin['symbol']}/USDT</div>
-                                    <div class="coin-price">${coin['price']:,}</div>
-                                    <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']}%</div>
-                                </div>
-                                <div class="trend-badge" style="background-color: {coin['signal_color']}22; color: {coin['signal_color']}; border: 1px solid {coin['signal_color']};">
-                                    {coin['signal_text']}
-                                </div>
+                            <div class="volume-anomaly-card">
+                                <div class="coin-title">🔥 爆量突擊: {coin['symbol']}/USDT</div>
+                                <div class="coin-price">${coin['price']:,}</div>
+                                <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']}%</div>
+                                <div class="coin-vol">📊 24h 成交額: {coin['volume_str']}</div>
                             </div>
                         """, unsafe_allow_html=True)
-                        
-                        # 🔥 【核心進化】：只有當該自選幣觸發異常（>6% 或 <-6%）時，才啟動 AI 診斷
-                        if coin['is_anomaly']:
-                            if GEMINI_API_KEY:
-                                with st.spinner(f"🚨 正在攔截 {coin['symbol']} 主力資金流..."):
-                                    ai_msg = ask_gemini_anomaly_analysis(coin['symbol'], coin['price'], coin['change'])
-                                    st.error(f"⚔️ **AI 實戰操作方法:**\n{ai_msg}")
-                            else:
-                                st.warning("🔑 請在左選單最上方輸入 Key 以啟用異常 AI 分析。")
-                        else:
-                            # 平時波瀾不驚，顯示靜態安全提示，完全不佔用 API 額度
-                            st.info("🟢 行情波動在安全區間內，AI 待命防禦中。")
             else:
-                st.info("請在左側邊欄搜尋並勾選想要監控的自選幣種！")
-                
-        # 動態冷卻防爆機制
+                st.success("🔍 市場目前風平浪靜，尚未偵測到 24h 成交額 > 10M 且波動 > 5% 的爆量標的。")
+
+        # 處理右側復盤視窗的單次 AI 點擊觸發
+        if btn_replay:
+            with replay_placeholder:
+                if target_replay_data:
+                    st.info(f"📊 **正在對 {target_replay_data['symbol']}/USDT 進行量化結構調研...**")
+                    st.write(f"當前現價: `{target_replay_data['price']}` | 漲跌幅: `{target_replay_data['change']}%` | 24h總量: `{target_replay_data['volume']}`")
+                    
+                    with st.spinner("⚔️ AI 獵手正在解構大單資金流與主力心理..."):
+                        ai_report = ask_gemini_replay_analysis(
+                            target_replay_data['symbol'],
+                            target_replay_data['price'],
+                            target_replay_data['change'],
+                            target_replay_data['volume'],
+                            target_replay_data['high'],
+                            target_replay_data['low']
+                        )
+                        st.error(f"⚔️ **AI 實戰復盤報告 ({target_replay_data['symbol']}):**\n{ai_report}")
+                else:
+                    st.warning(f"⚠️ 在 OKX 市場中暫時找不到 `{replay_coin}/USDT` 的即時數據，請檢查代號是否輸入正確。")
+            # 點擊完畢後重置狀態，防止無限制循環觸發 API
+            btn_replay = False
+
+        # 全網雷達循環冷卻
         time.sleep(refresh_interval)
         
     except Exception as e:
-        st.error(f"📡 數據中斷，自動重連中... Code: {e}")
         time.sleep(5)
