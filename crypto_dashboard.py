@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 # 1. 網頁頂級配置與黑客風 CSS 注入
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | 純自選量化艙",
+    page_title="CryptoHunter | 純自選戰研艙",
     layout="wide"
 )
 
@@ -20,7 +20,7 @@ if "refresh_val" not in st.session_state:
 if "user_favs" not in st.session_state:
     st.session_state.user_favs = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
 if "cached_portfolio_analysis" not in st.session_state:
-    st.session_state.cached_portfolio_analysis = "💡 等待 AI 進行自選組合聯通調研..."
+    st.session_state.cached_portfolio_analysis = "💡 等待 AI 進行自選組合連通調研..."
 if "last_ai_update" not in st.session_state:
     st.session_state.last_ai_update = 0.0
 
@@ -31,43 +31,10 @@ st.markdown("""
     .stApp { background-color: #0E1117; }
     h1, h2, h3, h4 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
     
-    /* 核心數據卡片樣式 */
-    .square-card {
-        background-color: #161B22;
-        border: 2px solid #30363D;
-        border-radius: 15px;
-        padding: 22px;
-        margin-bottom: 15px;
-        min-height: 200px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-    }
-    .coin-title { font-size: 24px; font-weight: bold; color: #FFF; font-family: 'Courier New', monospace; }
-    .coin-price { font-size: 30px; font-weight: bold; color: #00FF66; margin: 8px 0; }
-    .coin-change { font-size: 18px; font-weight: bold; }
-    
-    /* 雷達精簡方向提示樣式 */
-    .radar-direction {
-        background-color: #1F2937;
-        padding: 10px;
-        border-radius: 8px;
-        font-size: 13px;
-        color: #FF3366;
-        margin-top: 8px;
-        border-left: 4px solid #FF3366;
-        font-weight: bold;
-    }
-    .radar-direction.bull {
-        color: #00FF66;
-        border-left: 4px solid #00FF66;
-    }
-
     @media (max-width: 768px) {
-        .square-card { padding: 15px; min-height: 180px; margin-bottom: 12px; border-radius: 10px; }
-        .coin-title { font-size: 18px; }
-        .coin-price { font-size: 22px; margin: 4px 0; }
-        .coin-change { font-size: 15px; }
+        h1 { font-size: 22px !important; }
+        h2 { font-size: 18px !important; }
+        h3 { font-size: 16px !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -85,15 +52,6 @@ exchange = get_exchange()
 # 3. 側邊欄控制台 (設定永久鎖定，絕不跳針)
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
-
-page_view = st.sidebar.radio(
-    "🧭 請選擇主畫面顯示面板",
-    ["📊 自選戰研與 AI 建議", "🚨 自選異動提醒"],
-    index=0 if st.session_state.get("last_page_view") == "📊 自選戰研與 AI 建議" else (1 if st.session_state.get("last_page_view") == "🚨 自選異動提醒" else 0)
-)
-st.session_state.last_page_view = page_view
-
-st.sidebar.markdown("---")
 
 api_key = None
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
@@ -133,15 +91,8 @@ st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, k
 st_autorefresh(interval=st.session_state.refresh_val * 1000, key="datarefresh")
 
 # =====================================================================
-# 4. 自選專屬雷達精簡大概方向演算法
+# 4. Gemini 自選組合多幣連通與下單機會調研函數
 # =====================================================================
-def get_rough_direction(change_pct):
-    if change_pct >= 10.0: return "🔥 ［主力暴力強拉］ 短線極度超買，具備右側突破下單機會，嚴防高位天地針", "bull"
-    elif 5.0 <= change_pct < 10.0: return "🟢 ［多頭強勢上攻］ 成交量能放大，具備回踩均線順勢進多機會", "bull"
-    elif change_pct <= -10.0: return "🩸 ［恐慌砸盤爆倉］ 空頭慣性極強，出現長下影爆量止跌訊號前禁止抄底", "bear"
-    elif -10.0 < change_pct <= -5.0: return "🔴 ［空頭大單壓制］ 反彈無力，屬於順勢分批反彈做空機會", "bear"
-    return "⚪ ［常態波動籌碼沉澱］ 箱體窄幅洗盤中，暫無明確下單機會", "neutral"
-
 def ask_gemini_portfolio_analysis(fav_data_list):
     if not api_key: return "⚠️ 請先配置 Gemini API Key"
     if not fav_data_list: return "暫無自選標的"
@@ -178,7 +129,7 @@ except:
 
 fav_data_list = []
 
-# 精準按照使用者在多選欄點擊的順序建立數據，不夾帶任何路人幣
+# 精準按照使用者在多選欄點擊的順序建立數據，不夾帶任何外部雜訊
 for symbol in st.session_state.user_favs:
     if symbol in all_tickers:
         ticker = all_tickers[symbol]
@@ -194,89 +145,56 @@ for symbol in st.session_state.user_favs:
         })
 
 # =====================================================================
-# 6. 主畫面雙欄自適應佈局 (100% 自選純淨艙)
+# 6. 主畫面雙欄自適應佈局 (自選極簡完全體)
 # =====================================================================
-st.title("🏹 CryptoHunter 智能雷達 (純自選核心版)")
+st.title("🏹 CryptoHunter 智能雷達 (純自選戰研艙)")
 st.markdown("---")
 
-# ---------------------------------------------------------------------
-# 模式 A：📊 自選戰研與 AI 建議
-# ---------------------------------------------------------------------
-if page_view == "📊 自選戰研與 AI 建議":
-    col_left, col_right = st.columns([6, 6])
+col_left, col_right = st.columns([6, 6])
+
+with col_left:
+    st.subheader("📊 自選標的核心監控區")
+    st.write(f"⏱ 數據更新：`{datetime.now().strftime('%H:%M:%S')}`")
+    st.markdown("---")
     
-    with col_left:
-        st.subheader("📊 自選標的核心監控艙")
-        st.write(f"⏱ 數據更新：`{datetime.now().strftime('%H:%M:%S')}`")
-        st.markdown("---")
-        
-        if fav_data_list:
-            for coin in fav_data_list:
-                c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
-                c_sign = "+" if coin['change'] >= 0 else ""
-                st.markdown(f"### 🪙 {coin['symbol']} 實時狀態")
-                st.markdown(f"現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span> | 24h成交額: `{coin['volume_str']}`", unsafe_allow_html=True)
-                st.markdown("---")
-        else:
-            st.info("💡 請先在左側控制台勾選你想排列監控的自選幣。")
-
-    with col_right:
-        st.subheader("🧠 Gemini 自選組合多幣聯動與下單機會調研")
-        st.markdown("---")
-        
-        if fav_data_list:
-            time_now = time.time()
-            time_diff = time_now - st.session_state.last_ai_update
-            
-            # 手動重研按鈕，冷卻防禦設為 300 秒保護免費層額度
-            force_refresh_ai = st.button("⚡ 手動刷新 AI 戰研報告", use_container_width=True)
-            
-            if force_refresh_ai or "💡 等待" in st.session_state.cached_portfolio_analysis or (time_diff > 300.0):
-                with st.spinner("正在進行自選幣組合跨市場資金連通性與下單機會調研..."):
-                    res = ask_gemini_portfolio_analysis(fav_data_list)
-                    if "❌ 調研失敗" not in res:
-                        st.session_state.cached_portfolio_analysis = res
-                        st.session_state.last_ai_update = time_now
-                    else:
-                        st.error(res)
-            
-            # 偵測下單機會高亮
-            if "下單機會" in st.session_state.cached_portfolio_analysis or "🔥" in st.session_state.cached_portfolio_analysis:
-                st.warning(st.session_state.cached_portfolio_analysis)
-            else:
-                st.info(st.session_state.cached_portfolio_analysis)
-            
-            seconds_left = int(300 - (time_now - st.session_state.last_ai_update))
-            if seconds_left > 0:
-                st.caption(f"⏱ 智能快取安全護盾生效中。 `{seconds_left}秒` 後自動解鎖下次 AI 調研，或點擊上方按鈕手動更新。")
-        else:
-            st.info("暫無自選幣數據可供 AI 進行連通分析。")
-
-# ---------------------------------------------------------------------
-# 模式 B：🚨 自選異動提醒 (100% 只放你的自選幣大方格卡片)
-# ---------------------------------------------------------------------
-else:
-    st.subheader("🚨 自選標的異常劇烈波動與下單機會捕捉")
     if fav_data_list:
-        cols = st.columns(3)
-        for idx, coin in enumerate(fav_data_list):
-            with cols[idx % 3]:
-                c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
-                c_sign = "+" if coin['change'] >= 0 else ""
-                dir_text, dir_type = get_rough_direction(coin['change'])
-                class_type = "bull" if dir_type == "bull" else ("neutral" if dir_type == "neutral" else "")
-                
-                card_html = f"""
-                <div class="square-card">
-                    <div>
-                        <div class="coin-title">🔥 {coin['symbol']}/USDT</div>
-                        <div class="coin-price">${coin['price']:,}</div>
-                        <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']:.2f}%</div>
-                        <div style="color: #8B949E; font-size: 13px; margin-top: 4px;">24h成交額: {coin['volume_str']}</div>
-                        <div class="radar-direction {class_type}">{dir_text}</div>
-                    </div>
-                </div>
-                """
-                st.markdown(card_html, unsafe_allow_html=True)
+        for coin in fav_data_list:
+            c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
+            c_sign = "+" if coin['change'] >= 0 else ""
+            st.markdown(f"### 🪙 {coin['symbol']} 實時狀態")
+            st.markdown(f"現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span> | 24h成交額: `{coin['volume_str']}`", unsafe_allow_html=True)
+            st.markdown("---")
     else:
-        st.info("💡 控制台內空空如也，請先在左側多選欄中勾選自選監控標的。")
+        st.info("💡 請先在左側控制台勾選你想排列監控的自選幣。")
+
+with col_right:
+    st.subheader("🧠 Gemini 自選組合多幣聯動與下單機會調研")
+    st.markdown("---")
+    
+    if fav_data_list:
+        time_now = time.time()
+        time_diff = time_now - st.session_state.last_ai_update
+        
+        # 手動重研按鈕，冷卻防禦設為 300 秒保護免費層額度
+        force_refresh_ai = st.button("⚡ 手動刷新 AI 戰研報告", use_container_width=True)
+        
+        if force_refresh_ai or "💡 等待" in st.session_state.cached_portfolio_analysis or (time_diff > 300.0):
+            with st.spinner("正在進行自選幣組合跨市場資金連通性與下單機會調研..."):
+                res = ask_gemini_portfolio_analysis(fav_data_list)
+                if "❌ 調研失敗" not in res:
+                    st.session_state.cached_portfolio_analysis = res
+                    st.session_state.last_ai_update = time_now
+                else:
+                    st.error(res)
+        
+        # 偵測下單機會高亮
+        if "下單機會" in st.session_state.cached_portfolio_analysis or "🔥" in st.session_state.cached_portfolio_analysis:
+            st.warning(st.session_state.cached_portfolio_analysis)
+        else:
+            st.info(st.session_state.cached_portfolio_analysis)
+        
+        seconds_left = int(300 - (time_now - st.session_state.last_ai_update))
+        if seconds_left > 0:
+            st.caption(f"⏱ 智能快取安全護盾生效中。 `{seconds_left}秒` 後自動解鎖下次 AI 調研，或點擊上方按鈕手動更新。")
+    else:
+        st.info("暫無自選幣數據可供 AI 進行連通分析。")
