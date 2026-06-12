@@ -2,20 +2,11 @@ import streamlit as st
 import ccxt
 from datetime import datetime
 import requests
-import time
-from streamlit_autorefresh import st_autorefresh
 
 # =====================================================================
-# 1. 網頁頂級配置與【櫻花飛舞 x 奢華正方形矩陣】CSS 動態注入
+# 1. 全局網頁配置與【奢華粉櫻 x 正方形卡片】高級 CSS 注入
 # =====================================================================
-st.set_page_config(
-    page_title="CryptoHunter | 櫻之自選純淨艙",
-    layout="wide"
-)
-
-# 🧠 初始化絕對持久化記憶體 (防跑針、防洗掉、防爆戳 API)
-if "single_coin_ai" not in st.session_state: st.session_state.single_coin_ai = {}
-if "last_ai_click_time" not in st.session_state: st.session_state.last_ai_click_time = {}
+st.set_page_config(page_title="CryptoHunter | 櫻之戰研艙", layout="wide")
 
 st.markdown("""
     <style>
@@ -23,7 +14,7 @@ st.markdown("""
     .stApp { background: #0B0D13; overflow-x: hidden; }
     h1, h2, h3, h4 { color: #FFB7C5 !important; font-family: 'Courier New', monospace; text-shadow: 0 0 10px rgba(255,183,197,0.4); }
 
-    /* 🎯 精緻正方形發光卡片外殼 */
+    /* 🎯 透過樣式穿透，直接將容器美化為發光正方形卡片 */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background: rgba(22, 27, 34, 0.85) !important;
         border: 2px solid rgba(255, 183, 197, 0.35) !important;
@@ -47,7 +38,6 @@ st.markdown("""
     .petal:nth-child(4) { left: 70%; width: 14px; height: 11px; animation-duration: 8s; animation-delay: 2s; }
     .petal:nth-child(5) { left: 90%; width: 12px; height: 9px; animation-duration: 7.5s; animation-delay: 1.5s; }
     </style>
-    
     <div class="sakura-bg">
         <div class="petal"></div><div class="petal"></div><div class="petal"></div>
         <div class="petal"></div><div class="petal"></div>
@@ -55,7 +45,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================================
-# 2. 交易所初始化
+# 2. 交易所與數據源準備
 # =====================================================================
 @st.cache_resource
 def get_exchange(): return ccxt.okx()
@@ -69,21 +59,18 @@ def get_all_usdt_symbols():
 all_cryptos = get_all_usdt_symbols()
 
 # =====================================================================
-# 3. 側邊欄控制台 (拋棄複雜網址同步，回歸極簡穩定)
+# 3. 側邊欄控制台 (最純粹的原生組件，絕不跑針)
 # =====================================================================
 st.sidebar.header("🌸 櫻之量化控制台")
 
-# 密鑰讀取 (優先檢查 secrets，否則提供手動輸入)
+# API Key 讀取
 api_key = st.secrets.get("GEMINI_API_KEY") or st.sidebar.text_input("Gemini API Key", type="password", placeholder="AIzaSy...")
 
-chosen_favs = st.sidebar.multiselect("🎯 自選監控區 (可滑鼠直接排序)", options=all_cryptos, default=["BTC/USDT", "ETH/USDT", "SOL/USDT"])
+chosen_favs = st.sidebar.multiselect("🎯 自選監控區", options=all_cryptos, default=["BTC/USDT", "ETH/USDT", "SOL/USDT"])
 chosen_refresh = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=5)
 
-# 行情定時自動刷新 (拉到 15 秒絕不噴錯變紅)
-st_autorefresh(interval=chosen_refresh * 1000, key="sakura_pure_heartbeat")
-
 # =====================================================================
-# 4. 毫無累贅的 Gemini AI 請求函數
+# 4. Gemini AI 請求函數
 # =====================================================================
 def ask_gemini_ai(coin, price, change, vol_str):
     if not api_key: return "⚠️ 請先配置控制台的 Gemini API Key"
@@ -91,79 +78,70 @@ def ask_gemini_ai(coin, price, change, vol_str):
     prompt = f"代幣:{coin}/USDT | 現價:{price} | 漲跌:{change}% | 24h成交額:{vol_str}。請用繁體中文給出極精簡實戰報告：1.【主力心理學】 2.【🔥 突發下單機會提醒】(給出具體多空方向與防守點，若無提示觀望)。"
     try:
         response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10).json()
-        if 'error' in response: 
-            return f"❌ API 限制: {response['error'].get('message', '請等待冷卻')}"
+        if 'error' in response: return f"❌ API 限制: {response['error'].get('message', '請等待冷卻')}"
         return response['candidates'][0]['content']['parts'][0]['text']
-    except Exception as e: 
-        return f"⚠️ 網路傳輸異常 ({e})"
+    except Exception as e: return f"⚠️ 網路傳輸異常 ({e})"
 
 # =====================================================================
-# 5. 實時行情獲取
+# 5. 核心：局部重新整理片段 (Fragment)
 # =====================================================================
-try: all_tickers = exchange.fetch_tickers()
-except: st.rerun()
-
-fav_data_list = []
-for symbol in chosen_favs:
-    if symbol in all_tickers:
+# 🎯 這個裝飾器是終極魔法：當這個函數自己定時重整時，整個網頁的其他地方完全靜止！
+@st.fragment(run_every=chosen_refresh)
+def render_monitor_dashboard(fav_coins):
+    try: all_tickers = exchange.fetch_tickers()
+    except: return
+    
+    st.write(f"⏱ 行情脈搏更新時間：`{datetime.now().strftime('%H:%M:%S')}` (僅局部刷新行情，其餘元件完全死鎖)")
+    st.markdown("---")
+    
+    # 建立 3 欄響應式正方形矩陣
+    cols = st.columns(3)
+    
+    for idx, symbol in enumerate(fav_coins):
+        if symbol not in all_tickers: continue
+        
         t = all_tickers[symbol]
         price = t['last']
         change = t['percentage'] if t['percentage'] is not None else 0.0
         vol = t['quoteVolume'] if t['quoteVolume'] else ((t['baseVolume'] or 0) * price)
-        fav_data_list.append({
-            "symbol": symbol.replace('/USDT', ''), "price": price, "change": change, "vol_str": f"{vol / 1000000:.2f}M USDT"
-        })
-
-# =====================================================================
-# 6. 主畫面佈局 (正方形高級發光卡片矩陣，100% 打通資料流)
-# =====================================================================
-st.title("🏹 CryptoHunter 智能雷達 (櫻之自選純淨艙)")
-st.write(f"⏱ 行情脈搏更新時間：`{datetime.now().strftime('%H:%M:%S')}`")
-st.markdown("---")
-
-if fav_data_list:
-    cols = st.columns(3)
-    current_time = time.time()
-    
-    for idx, coin in enumerate(fav_data_list):
+        coin_name = symbol.replace('/USDT', '')
+        vol_str = f"{vol / 1000000:.2f}M USDT"
+        
         with cols[idx % 3]:
+            # 使用 container 穿透美化成奢華正方形卡片
             with st.container():
-                c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
-                c_sign = "+" if coin['change'] >= 0 else ""
+                c_color = "#00FF66" if change >= 0 else "#FF3366"
+                c_sign = "+" if change >= 0 else ""
                 
-                # 1. 渲染即時看板數據
-                st.markdown(f"### 🪙 {coin['symbol']}/USDT")
-                st.markdown(f"<h2 style='color:#00FF66; margin:0;'>${coin['price']:,}</h2>", unsafe_allow_html=True)
-                st.markdown(f"漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span> | 24h量: `{coin['vol_str']}`", unsafe_allow_html=True)
+                # 數據渲染
+                st.markdown(f"### 🪙 {coin_name}/USDT")
+                st.markdown(f"<h2 style='color:#00FF66; margin:0;'>${price}</h2>", unsafe_allow_html=True)
+                st.markdown(f"漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{change:.2f}%</span> | 24h量: `{vol_str}`", unsafe_allow_html=True)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # 計算該代幣上一次被點擊的時間差
-                last_click = st.session_state.last_ai_click_time.get(coin['symbol'], 0.0)
-                time_diff = current_time - last_click
+                # 手動精確戰研按鈕 (點擊時只會觸發這個 fragment rerun，速度極快)
+                if st.button(f"⚡ 執行 {coin_name} AI 戰研", key=f"btn_{coin_name}", use_container_width=True):
+                    with st.spinner("深度調研主力籌碼流向中..."):
+                        res = ask_gemini_ai(coin_name, price, change, vol_str)
+                        # 將結果單獨鎖進 session_state
+                        st.session_state[f"ai_res_{coin_name}"] = res
                 
-                # 2. 戰研調研觸發按鈕
-                if st.button(f"⚡ 執行 {coin['symbol']} AI 戰研", key=f"btn_{coin['symbol']}", use_container_width=True):
-                    # 🎯 【防爆核心】15秒內如果重寫點擊，直接就地攔截，完全不發送請求到 Google 伺服器
-                    if time_diff < 15.0:
-                        st.session_state.single_coin_ai[coin['symbol']] = f"⏱️ 智能防爆盾保護中。你剛點過分析，請等待 {int(15 - time_diff)} 秒後再次點擊，以防 API 額度超載！"
-                    else:
-                        with st.spinner("操盤手請稍候，正在調研盤面心理..."):
-                            res = ask_gemini_ai(coin['symbol'], coin['price'], coin['change'], coin['vol_str'])
-                            st.session_state.single_coin_ai[coin['symbol']] = res
-                            st.session_state.last_ai_click_time[coin['symbol']] = current_time
-                    st.rerun()
-                
-                # 3. --- AI 戰研與下單機會提醒渲染區 (持久快取，自動刷新絕對不消失！) ---
-                if coin['symbol'] in st.session_state.single_coin_ai:
-                    ai_text = st.session_state.single_coin_ai[coin['symbol']]
-                    
+                # --- AI 戰研結果完美渲染區 (局部刷新絕對不會洗掉它！) ---
+                cache_key = f"ai_res_{coin_name}"
+                if cache_key in st.session_state:
+                    ai_text = st.session_state[cache_key]
                     if "下單機會" in ai_text or "🔥" in ai_text:
                         st.warning(ai_text)
-                    elif "⏱️" in ai_text or "❌" in ai_text:
-                        st.error(ai_text)
                     else:
                         st.info(ai_text)
                 else:
                     st.caption("💡 狀態：待機中。點擊按鈕即刻調研。")
+
+# =====================================================================
+# 6. 主畫面入口
+# =====================================================================
+st.title("🏹 CryptoHunter 智能雷達 (櫻之局部刷新艙)")
+if chosen_favs:
+    render_monitor_dashboard(chosen_favs)
 else:
     st.info("💡 櫻之雷達待機中。請先在左側控制台勾選你想監控的自選加密貨幣。")
