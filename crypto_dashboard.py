@@ -98,4 +98,72 @@ while True:
             # 分流 1：如果屬於使用者的「自選幣」
             if symbol in fav_cryptos:
                 # 簡單多空判斷：最新價高於 24h 平均價 (最高+最低)/2 則偏多，反之偏空
-                mid_price = (high_24h + low_24
+                mid_price = (high_24h + low_24h) / 2 if high_24h and low_24h else current_price
+                trend = "🟢 偏多頭" if current_price >= mid_price else "🔴 偏空頭"
+                
+                fav_data.append({
+                    "自選幣種": symbol.replace('/USDT', ''),
+                    "最新價格": current_price,
+                    "24h 漲跌(%)": change_pct,
+                    "當前多空趨勢": trend
+                })
+                
+            # 分流 2：如果符合「異常暴動」條件
+            if is_anomaly and symbol not in fav_cryptos:
+                anomaly_data.append({
+                    "異常幣種": symbol.replace('/USDT', ''),
+                    "最新價格": current_price,
+                    "24h 漲跌": change_pct,
+                    "24h 成交額": f"{vol_usdt_24h / 1000000:.1f}M"
+                })
+
+        # 3. 渲染網頁（雙欄分割畫面）
+        with placeholder.container():
+            st.write(f"⏱️ 訊號雷達同步時間：`{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
+            st.markdown("---")
+            
+            # 建立左右兩大戰區
+            col_left, col_right = st.columns(2)
+            
+            # --- 左戰區：自選區 ---
+            with col_left:
+                st.subheader("🎯 獵手自選監控看板")
+                if fav_data:
+                    df_fav = pd.DataFrame(fav_data).set_index("自選幣種")
+                    
+                    # 幫自選區表格上色
+                    def color_trend(val):
+                        if "🟢" in str(val): return 'color: #00FF66; font-weight: bold;'
+                        if "🔴" in str(val): return 'color: #FF3366; font-weight: bold;'
+                        return ''
+                    
+                    st.dataframe(
+                        df_fav.style.map(color_trend, subset=['當前多空趨勢']),
+                        use_container_width=True
+                    )
+                else:
+                    st.info("請在左側邊欄勾選你想關注的幣種。")
+                    
+            # --- 右戰區：異常爆量區 ---
+            with col_right:
+                st.subheader(f"🚨 全網突發【異常異動】催化區")
+                if anomaly_data:
+                    df_anomaly = pd.DataFrame(anomaly_data).sort_values(by="24h 漲跌", ascending=False).set_index("異常幣種")
+                    
+                    st.write("⚠️ 以下幣種當前正處於極端波動或主力資金劇烈進出狀態：")
+                    
+                    def color_change(val):
+                        return 'color: #00FF66;' if val > 0 else 'color: #FF3366;'
+                        
+                    st.dataframe(
+                        df_anomaly.style.map(color_change, subset=['24h 漲跌']),
+                        use_container_width=True
+                    )
+                else:
+                    st.success("🔍 市場風平浪靜，目前未偵測到突發異常爆量的黑馬幣種。")
+
+        time.sleep(refresh_interval)
+        
+    except Exception as e:
+        st.error(f"📡 數據流重斷，自動重連中... Error: {e}")
+        time.sleep(5)
