@@ -3,16 +3,17 @@ import ccxt
 import pandas as pd
 from datetime import datetime
 import requests
+from streamlit_autorefresh import st_autorefresh
 
 # =====================================================================
-# 1. 網頁頂級配置與黑客風 CSS 注入 (完全消滅暗化，還原高亮正方形)
+# 1. 網頁頂級配置與原創科技風 CSS 注入 (消滅暗化，極致方塊排版)
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | 自由連動完全體",
+    page_title="CryptoHunter | 雙核完全體",
     layout="wide"
 )
 
-# 持久化緩存記憶體，防止自動刷新時重複發送 HTTP 請求
+# 持久化記憶體，防止自動刷新時重複發送 HTTP 請求扣除 AI 額度
 if "cached_ai_analysis" not in st.session_state:
     st.session_state.cached_ai_analysis = {}
 if "previous_anomalies" not in st.session_state:
@@ -168,7 +169,7 @@ for symbol, ticker in all_tickers.items():
         current_anomaly_symbols.add(coin_clean)
         volume_anomalies.append({"symbol": coin_clean, "price": current_price, "change": change_pct, "volume_str": f"{vol_usdt / 1000000:.1f}M USDT", "volume_usdt": vol_usdt})
 
-# 🎛️ 音頻報警系統
+# 🎛️ 音頻報警提示
 new_anomalies = current_anomaly_symbols - st.session_state.previous_anomalies
 if new_anomalies and alert_volume > 0: st.session_state.trigger_beep = True
 st.session_state.previous_anomalies = current_anomaly_symbols
@@ -181,12 +182,12 @@ if st.session_state.trigger_beep:
     """, unsafe_allow_html=True)
 
 # =====================================================================
-# 6. 主畫面雙欄自由連動佈局 (左 6 右 6，切換時全盤重新洗牌，絕不鎖死)
+# 6. 主畫面雙欄自由連動佈局 (左 6 右 6，切換時全盤洗牌，絕不鎖死、不重疊)
 # =====================================================================
 col_left, col_right = st.columns([6, 6])
 
 # ---------------------------------------------------------------------
-# 模式 A：📊 自選戰研與 AI 建議 模式
+# 模式 A：📊 自選戰研與 AI 建議 模式 (左邊下單戰研、右邊大方塊看板)
 # ---------------------------------------------------------------------
 if page_view == "📊 自選戰研與 AI 建議":
     
@@ -204,7 +205,7 @@ if page_view == "📊 自選戰研與 AI 建議":
                 st.markdown(f"現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
                 st.write(f"系統量化訊號: {coin['signal_text']}")
                 
-                # 動態 AI 引擎 (安全鎖版)
+                # 動態 AI 引擎 (安全記憶體鎖，10秒自動刷新時絕不重複請求)
                 if "觀望" not in coin['signal_text'] and coin['symbol'] not in st.session_state.cached_ai_analysis:
                     with st.spinner(f"正在對 {coin['symbol']} 進行主力心理學結構調研..."):
                         ai_res = ask_gemini_market_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], coin['volume_str'])
@@ -219,7 +220,6 @@ if page_view == "📊 自選戰研與 AI 建議":
             st.info("請在左側控制台勾選你要監控的自選幣！")
 
     with col_right:
-        # ✨ 【不鎖死關鍵】：選戰研模式時，右側亮出你最愛的大方塊看板！
         st.subheader("📊 自選行情大卡片看板")
         st.markdown("---")
         if fav_data_list:
@@ -244,46 +244,47 @@ if page_view == "📊 自選戰研與 AI 建議":
             st.info("請多勾選監控幣種！")
 
 # ---------------------------------------------------------------------
-# 模式 B：🚨 突發爆量提醒 模式 (大方塊在這裡會徹底消失，完全不鎖死)
+# 模式 B：🚨 突發爆量提醒 模式 (大方塊徹底不見，左右分為下單區與觀察區)
 # ---------------------------------------------------------------------
 elif page_view == "🚨 突發爆量提醒":
     
-    # ✨ 左右兩邊全部用來呈現場景，讓自選方塊看板在此模式下「完全消失清空」
+    # 按照成交量大小進行排序
+    volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
+    half_len = (len(volume_anomalies) + 1) // 2
+    
+    # 🟢 左半邊：放成交額極高、剛爆發最吸金、列入【下單備選】的黑馬
     with col_left:
-        st.subheader("🚨 全網【突發爆量異常】提醒窗口 (左區)")
-        st.caption("🔥 自動鎖定全網 24h 成交額 > 10M 且波動 > 5% 的黑馬焦點")
+        st.subheader("🚨 全網【突發爆量異常】提醒窗口 (左區：下單備選)")
+        st.caption("🔥 自動鎖定全網 24h 成交額最高、動能最大、符合短線狙擊下單標準的標的")
         st.markdown("---")
         
-        volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
-        half_len = (len(volume_anomalies) + 1) // 2
-        
         if volume_anomalies:
-            for coin in volume_anomalies[:half_len]: # 前半段名單放在左區
+            for coin in volume_anomalies[:half_len]: 
                 c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
                 c_sign = "+" if coin['change'] >= 0 else ""
-                st.markdown(f"**🔥 爆量異動: {coin['symbol']}** | <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
-                st.write(f"現價: `${coin['price']:,}` | 24h成交額: `{coin['volume_str']}`")
+                st.markdown(f"**🔥 爆量強勢: {coin['symbol']}** | <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
+                st.write(f"現價: `${coin['price']:,}` | 24h總量: `{coin['volume_str']}`")
                 st.markdown("---")
         else:
             st.success("🔍 全網目前大盤平穩，尚未偵測到突發爆量標的。")
 
+    # 🟡 右半邊：大方塊卡片完全消失清空，換成全網其餘雷達監聽、列入【重點觀察】的標的
     with col_right:
-        st.subheader("🚨 全網【突發爆量異常】提醒窗口 (右區)")
-        st.caption("🔥 24h全網雷達同步常駐掃描監聽中...")
+        st.subheader("🚨 全網【突發爆量異常】提醒窗口 (右區：重點觀察)")
+        st.caption("🔥 24h全網雷達同步常駐掃描監聽，其餘潛在異動標的名單")
         st.markdown("---")
         
         if volume_anomalies and len(volume_anomalies) > half_len:
-            for coin in volume_anomalies[half_len:12]: # 後半段名單放在右區，大方塊完全不見！
+            for coin in volume_anomalies[half_len:12]: # 限制前12名，版面最乾淨
                 c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
                 c_sign = "+" if coin['change'] >= 0 else ""
-                st.markdown(f"**🔥 爆量異動: {coin['symbol']}** | <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
-                st.write(f"現價: `${coin['price']:,}` | 24h成交額: `{coin['volume_str']}`")
+                st.markdown(f"**👀 異動觀察: {coin['symbol']}** | <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
+                st.write(f"現價: `${coin['price']:,}` | 24h總量: `{coin['volume_str']}`")
                 st.markdown("---")
         else:
-            st.info("🔍 剩餘全網焦點挖掘中...")
+            st.info("🔍 雷達常駐監聽中，剩餘全網焦點挖掘中...")
 
 # =====================================================================
-# 7. 原生無阻斷計時刷新器 (消滅暗化，維持全天高亮)
+# 7. 原生無阻斷計時刷新器 (徹底解决畫面變暗閃爍，高亮流暢運行)
 # =====================================================================
-from streamlit_autorefresh import st_autorefresh
 st_autorefresh(interval=refresh_interval * 1000, key="crypto_hunter_heartbeat")
