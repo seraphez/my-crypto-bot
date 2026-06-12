@@ -1,6 +1,5 @@
 import streamlit as st
 import ccxt
-import pandas as pd
 import time
 from datetime import datetime
 
@@ -8,7 +7,7 @@ from datetime import datetime
 # 1. 網頁頂級配置與原創科技風 CSS 注入 (右側正方形，取消暗化)
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | 完美側邊版",
+    page_title="CryptoHunter | 終極對流版",
     layout="wide"
 )
 
@@ -50,11 +49,11 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 3. 側邊欄控制台 (把切換窗口完美做在刷新頻率與自選區那邊)
+# 3. 側邊欄控制台 (把切換視窗完美做在刷新頻率與自選區那邊)
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
-# 🧭 【你的關鍵意見】：切換功能放在側邊欄控制台
+# 🧭 側邊欄分頁切換器
 page_view = st.sidebar.radio(
     "🧭 請選擇左側顯示面板",
     ["📊 自選戰研與 AI 建議", "🚨 突發爆量提醒"],
@@ -85,7 +84,7 @@ fav_cryptos = st.sidebar.multiselect(
 refresh_interval = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=5)
 
 # =====================================================================
-# 4. 量化訊號演算邏輯 (0 API 消耗，永不爆 Quota)
+# 4. 量化訊號演算邏輯
 # =====================================================================
 def get_strategy_signal(current, high, low):
     if not high or not low:
@@ -98,12 +97,12 @@ def get_strategy_signal(current, high, low):
     return "⚪ 建議觀望 (區間震盪盤整)", "#888888"
 
 # =====================================================================
-# 5. 主畫面經典佈局分配 (左 7 寬度放切換面板，右 5 寬度放你最愛的正方形看板)
+# 5. 主畫面經典佈局分配 (左 6 寬度放純淨切換視窗，右 6 寬度放方塊行情與爆量提醒)
 # =====================================================================
 st.title("🏹 CryptoHunter 雙核雷達智能儀表板")
 st.markdown("---")
 
-col_left_panel, col_right_main = st.columns([7, 5])
+col_left_panel, col_right_main = st.columns([6, 6])
 
 # 獲取最新行情
 try:
@@ -116,7 +115,7 @@ except Exception as e:
 fav_data_list = []
 volume_anomalies = []
 
-# 全市場數據一輪掃描與分流
+# 全市場數據掃描與分流
 for symbol, ticker in all_tickers.items():
     if not symbol.endswith('/USDT') or ':' in symbol: continue
     current_price = ticker['last']
@@ -125,6 +124,7 @@ for symbol, ticker in all_tickers.items():
     low_24h = ticker['low']
     vol_base = ticker['baseVolume'] if ticker['baseVolume'] else 0
     vol_usdt = ticker['quoteVolume'] if ticker['quoteVolume'] else (vol_base * current_price)
+    
     coin_clean = symbol.replace('/USDT', '')
     
     if symbol in fav_cryptos:
@@ -135,7 +135,7 @@ for symbol, ticker in all_tickers.items():
         volume_anomalies.append({"symbol": coin_clean, "price": current_price, "change": change_pct, "volume_str": f"{vol_usdt / 1000000:.1f}M USDT", "volume_usdt": vol_usdt})
 
 # ---------------------------------------------------------------------
-# 【左側窗口】：由側邊欄控制台的 Radio 按鈕觸發，切換時右側正方形完全不動
+# 【左側窗口】：點擊側邊欄時完全清空並重寫，絕不發生數據覆蓋或殘留
 # ---------------------------------------------------------------------
 with col_left_panel:
     if page_view == "📊 自選戰研與 AI 建議":
@@ -152,7 +152,6 @@ with col_left_panel:
                 st.markdown(f"### 🪙 {coin['symbol']} 戰略報告")
                 st.markdown(f"現價: `${coin['price']:,}` | 漲跌幅: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
                 
-                # 自動化量化策略建議 (不需手動輸入或點擊按鈕，0 API 消耗)
                 if "開多" in coin['signal_text']:
                     st.success(f"🟢 【AI 戰略建議】多頭主力正在強力吸籌突擊。目前價格已有效站穩多頭強勢區，開盤上方動能充足，建議順勢持多或埋伏突破，防守點建立在 24h 均價線。")
                 elif "開空" in coin['signal_text']:
@@ -164,6 +163,7 @@ with col_left_panel:
             st.info("請在左側邊欄多勾選幾個自選幣！")
 
     elif page_view == "🚨 突發爆量提醒":
+        # 當切換到這頁，原本上面的自選戰研數據就會【完全消失不殘留】
         st.subheader("🚨 全網【突發爆量異常】提醒窗口")
         st.caption("🔥 自動鎖定全網 24h 成交額 > 10M 且波動 > 5% 的黑馬焦點")
         st.markdown("---")
@@ -177,13 +177,13 @@ with col_left_panel:
                 st.write(f"現價: `${coin['price']:,}` | 24h總成交額: `{coin['volume_str']}`")
                 st.markdown("---")
         else:
-            st.success("🔍 全網目前波動穩定，尚未偵測到暴動幣。")
+            st.success("🔍 全網目前波動穩定，尚未偵測到爆量標的。")
 
 # ---------------------------------------------------------------------
-# 【右側主畫面】：你最愛的經典巨大正方形卡片看板 (永遠死守右側跳動行情)
+# 【右側主畫面】：黃金監控區（上方永遠死守方塊行情，下方永遠同步呈現爆量清單！）
 # ---------------------------------------------------------------------
 with col_right_main:
-    st.subheader("📊 自選行情看板")
+    st.subheader("📊 自選行情大卡片看板")
     st.markdown("---")
     
     if fav_data_list:
@@ -209,6 +209,20 @@ with col_right_main:
                 """, unsafe_allow_html=True)
     else:
         st.info("請在左側邊欄勾選監控幣種！")
+
+    # 🚨 【核心加強】：在正方形看板的正下方，永遠釘死一個即時爆量提醒區，確保它永遠在！
+    st.markdown(" ")
+    st.markdown("---")
+    st.subheader("📡 即時全網爆量警報（常駐監聽）")
+    
+    volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
+    if volume_anomalies:
+        for coin in volume_anomalies[:4]: # 右側放前4名最狂的異動標的，排版最精緻
+            c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
+            c_sign = "+" if coin['change'] >= 0 else ""
+            st.markdown(f"**⚡ 常駐異動: {coin['symbol']}** (`${coin['price']:,}`) | <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span> (量: `{coin['volume_str']}`)", unsafe_allow_html=True)
+    else:
+        st.caption("⚪ 全網波動暫時安全穩定。")
 
 # =====================================================================
 # 6. 非阻塞式自動脈搏刷新
