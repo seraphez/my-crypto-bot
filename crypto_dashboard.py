@@ -60,7 +60,7 @@ def generate_llm_report(api_key, symbol, price, rsi, trend, ml_prob):
         請用專業語氣給出：1. 盤勢點評 2. 綜合評估 3. 具體操作建議(止損/進場)。
         """
         response = client.chat.completions.create(
-            model="llama-3.3-70b-specdec",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
