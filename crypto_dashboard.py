@@ -187,4 +187,83 @@ while True:
                     "signal_color": signal_color
                 })
             elif is_anomaly:
-                anomaly_data_
+                anomaly_data_list.append({
+                    "異常幣種": symbol.replace('/USDT', ''),
+                    "最新價格": current_price,
+                    "24h 漲跌": change_pct,
+                    "24h 成交額": f"{vol_usdt_24h / 1000000:.1f}M"
+                })
+
+        # 開始渲染前端雙核心畫面
+        with placeholder.container():
+            col_header1, col_header2 = st.columns([3, 1])
+            with col_header1:
+                st.write(f"⏱ *訊號同步時間：* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
+            with col_header2:
+                st.write(f"📡 *數據頻率：* `{refresh_interval}秒/次`")
+                
+            st.markdown("---")
+            
+            # 分割為左（自選大方塊區）、右（異常量通知區）兩大版塊
+            col_left, col_right = st.columns([5, 3])
+            
+            # --- 左半邊：自選正方形大卡片區 ---
+            with col_left:
+                st.subheader("🎯 獵手自選監控（大方塊面板）")
+                if fav_data_list:
+                    # 每 2 個大方塊排成一列
+                    fav_cols = st.columns(2)
+                    for idx, coin in enumerate(fav_data_list):
+                        target_col = fav_cols[idx % 2]
+                        with target_col:
+                            c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
+                            c_sign = "+" if coin['change'] >= 0 else ""
+                            
+                            # 渲染 HTML/CSS 正方形科技卡片
+                            st.markdown(f"""
+                                <div class="square-card">
+                                    <div>
+                                        <div class="coin-title">🪙 {coin['symbol']}/USDT</div>
+                                        <div class="coin-price">${coin['price']:,}</div>
+                                        <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']}%</div>
+                                    </div>
+                                    <div class="trend-badge" style="background-color: {coin['signal_color']}22; color: {coin['signal_color']}; border: 1px solid {coin['signal_color']};">
+                                        {coin['signal_text']}
+                                    </div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # AI 分析報告顯示區
+                            if enable_ai:
+                                if has_ai:
+                                    with st.spinner(f"AI 正在精算 {coin['symbol']}..."):
+                                        ai_msg = ask_gemini_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'])
+                                        st.info(f"🤖 **AI 獵手診斷報告:**\n{ai_msg}")
+                                else:
+                                    st.warning("🔑 請展開左選單輸入 Key 或設定 Secrets 以啟用 AI。")
+                else:
+                    st.info("請在側邊欄搜尋並勾選想要監控的任何幣種！")
+                    
+            # --- 右半邊：全網突發異動追蹤區 ---
+            with col_right:
+                st.subheader("🚨 全網突發【異常波動】催化區")
+                if anomaly_data_list:
+                    df_anomaly = pd.DataFrame(anomaly_data_list).sort_values(by="24h 漲跌", ascending=False).set_index("異常幣種")
+                    
+                    def color_anomaly(val):
+                        return 'color: #00FF66; font-weight:bold;' if val > 0 else 'color: #FF3366; font-weight:bold;'
+                    
+                    st.dataframe(
+                        df_anomaly.style.map(color_anomaly, subset=['24h 漲跌']),
+                        use_container_width=True,
+                        height=550
+                    )
+                else:
+                    st.success("🔍 市場目前波動穩定，未偵測到突發爆量異動。")
+                    
+        # 有開 AI 且有 Key 時拉長更新，防止 AI 額度爆量
+        time.sleep(refresh_interval if not (enable_ai and has_ai) else max(refresh_interval, 8))
+        
+    except Exception as e:
+        st.error(f"📡 數據中斷，自動重連中... Code: {e}")
+        time.sleep(5)
