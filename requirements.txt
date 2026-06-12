@@ -4,3 +4,4 @@ pandas
 pandas-ta
 scikit-learn
 openai
+plotly
