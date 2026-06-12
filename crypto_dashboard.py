@@ -93,22 +93,18 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 3. 【新舊版本相容】網址查詢參數記憶機制（徹底解決 AttributeError）
+# 3. 【版本安全相容】網址查詢參數記憶機制
 # =====================================================================
 try:
-    # 嘗試 1：新版 Streamlit 物件用法 (不加括號)
     if hasattr(st, "query_parameters") and not callable(st.query_parameters):
         query_dict = st.query_parameters
-    # 嘗試 2：過渡版本用法 (加括號)
     elif hasattr(st, "query_parameters") and callable(st.query_parameters):
         query_dict = st.query_parameters()
-    # 嘗試 3：完全老舊版本相容
     else:
         query_dict = st.experimental_get_query_params()
 except:
     query_dict = {}
 
-# 安全取得網址參數值
 saved_view = query_dict.get("view", "📊 自選戰研與 AI 建議")
 if isinstance(saved_view, list): saved_view = saved_view[0]
 view_index = 1 if saved_view == "🚨 突發爆量提醒" else 0
@@ -123,13 +119,9 @@ if isinstance(saved_volume, list): saved_volume = saved_volume[0]
 try: default_volume = float(saved_volume)
 except: default_volume = 0.5
 
-# 處理多選自選清單
 if "favs" in query_dict:
-    if hasattr(query_dict, "get_all"):
-        raw_favs = query_dict.get_all("favs")
-    else:
-        raw_favs = query_dict["favs"]
-    
+    if hasattr(query_dict, "get_all"): raw_favs = query_dict.get_all("favs")
+    else: raw_favs = query_dict["favs"]
     if isinstance(raw_favs, str): raw_favs = [raw_favs]
     default_favs = [f"{f}/USDT" if not f.endswith("/USDT") else f for f in raw_favs]
 else:
@@ -176,7 +168,6 @@ fav_cryptos = st.sidebar.multiselect(
 refresh_interval = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=default_refresh)
 alert_volume = st.sidebar.slider("🔊 雷達警報音量", min_value=0.0, max_value=1.0, value=default_volume, step=0.1)
 
-# 安全寫回 URL
 try:
     new_params = {
         "view": page_view,
@@ -184,10 +175,8 @@ try:
         "volume": str(alert_volume),
         "favs": [s.replace("/USDT", "") for s in fav_cryptos]
     }
-    if hasattr(st, "query_parameters"):
-        st.query_parameters.update(new_params)
-    else:
-        st.experimental_set_query_params(**new_params)
+    if hasattr(st, "query_parameters"): st.query_parameters.update(new_params)
+    else: st.experimental_set_query_params(**new_params)
 except:
     pass
 
@@ -262,13 +251,16 @@ for symbol, ticker in all_tickers.items():
     vol_usdt = ticker['quoteVolume'] if ticker['quoteVolume'] else (vol_base * current_price)
     coin_clean = symbol.replace('/USDT', '')
     
+    # 建立自選幣數據
     if symbol in fav_cryptos:
         sig_txt, sig_col = get_strategy_signal(current_price, high_24h, low_24h)
         fav_data_list.append({
             "symbol": coin_clean, "price": current_price, "change": change_pct, 
-            "signal_text": sig_txt, "signal_color": sig_col, "volume_str": f"{vol_usdt / 1000000:.2f}M USDT"
+            "signal_text": sig_txt, "signal_color": sig_col, "volume_str": f"{vol_usdt / 1000000:.2f}M USDT",
+            "volume_usdt": vol_usdt
         })
         
+    # 全網異常大單掃描基準：成交額 >= 10M 且 波動 > 5%
     if vol_usdt >= 10000000 and (change_pct > 5 or change_pct < -5):
         current_anomaly_symbols.add(coin_clean)
         volume_anomalies.append({"symbol": coin_clean, "price": current_price, "change": change_pct, "volume_str": f"{vol_usdt / 1000000:.1f}M USDT", "volume_usdt": vol_usdt})
@@ -286,20 +278,19 @@ if st.session_state.trigger_beep:
     """, unsafe_allow_html=True)
 
 # =====================================================================
-# 7. 主畫面雙欄自適應佈局
+# 7. 主畫面雙欄自適應佈局 (資料分離防鎖死)
 # =====================================================================
 st.title("🏹 CryptoHunter 智能雷達")
 st.markdown("---")
 
-col_left, col_right = st.columns([6, 6])
-
 # ---------------------------------------------------------------------
-# 模式 A：📊 自選戰研與 AI 建議
+# 模式 A：📊 自選戰研與 AI 建議 (左右兩區只呈現自選幣相關資訊)
 # ---------------------------------------------------------------------
 if page_view == "📊 自選戰研與 AI 建議":
+    col_left, col_right = st.columns([6, 6])
     
     with col_left:
-        st.subheader("📊 自選幣核心數據監控")
+        st.subheader("📊 自選幣核心數據與 AI 調研")
         st.write(f"⏱ 更新：`{datetime.now().strftime('%H:%M:%S')}`")
         st.markdown("---")
         
@@ -311,7 +302,7 @@ if page_view == "📊 自選戰研與 AI 建議":
                 st.markdown(f"現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
                 st.write(f"量化結構訊號: {coin['signal_text']}")
                 
-                # 自動觸發 AI 數據分析
+                # 自動觸發 AI 數據分析 (非盤整區間且尚未有快取時)
                 if "盤整" not in coin['signal_text'] and coin['symbol'] not in st.session_state.cached_ai_analysis:
                     with st.spinner(f"正在調研 {coin['symbol']} 主力鏈上動向與開盤方針..."):
                         analysis = ask_gemini_market_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], coin['volume_str'])
@@ -320,35 +311,39 @@ if page_view == "📊 自選戰研與 AI 建議":
                 if coin['symbol'] in st.session_state.cached_ai_analysis:
                     st.info(st.session_state.cached_ai_analysis[coin['symbol']])
                 st.markdown("---")
+        else:
+            st.info("請先在左側控制台勾選你想監控的自選幣。")
 
     with col_right:
-        st.subheader("🚨 突發爆量即時快訊")
+        st.subheader("📈 自選幣即時量化與方針對照")
         st.markdown("---")
-        if volume_anomalies:
-            for anomaly in volume_anomalies:
-                analysis, plan = get_dynamic_analysis_and_plan(anomaly['change'])
-                st.markdown(f"**⚡ 動能警告：{anomaly['symbol']}**")
-                st.write(f"現價: {anomaly['price']} | 漲跌幅: {anomaly['change']}% | 成交量: {anomaly['volume_str']}")
+        if fav_data_list:
+            for coin in fav_data_list:
+                # 這裡只解析自選幣本身的量化結構與方針，不再參雜外部爆量幣
+                analysis, plan = get_dynamic_analysis_and_plan(coin['change'])
+                st.markdown(f"### 🪙 {coin['symbol']} 量化矩陣")
+                st.write(f"24h 總成交量： `{coin['volume_str']}`")
                 st.markdown(f"<div class='trend-analysis'>{analysis}</div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='trade-plan'>{plan}</div>", unsafe_allow_html=True)
                 st.markdown("---")
-        else:
-            st.info("目前市場暫無符合突發動能（成交額 > 10M 且 波動 > 5%）的標的。")
 
 # ---------------------------------------------------------------------
-# 模式 B：🚨 突發爆量提醒
+# 模式 B：🚨 突發爆量提醒 (全市場大單監控爆量幣如 TRUMP、XPL 等專屬地盤)
 # ---------------------------------------------------------------------
 else:
-    st.subheader("🚨 全網突發爆量監控面板")
+    st.subheader("🚨 全網突發爆量監控面板 (成交額 > 10M 且 波動 > 5%)")
     if volume_anomalies:
+        # 依成交量大小排序
         volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
         
+        # 使用響應式 3 欄位方格卡片布局
         cols = st.columns(3)
         for idx, anomaly in enumerate(volume_anomalies):
             with cols[idx % 3]:
                 c_color = "#00FF66" if anomaly['change'] >= 0 else "#FF3366"
                 c_sign = "+" if anomaly['change'] >= 0 else ""
                 
+                # 取得該全網爆量代幣的實時量化結構分析與下單計劃
                 analysis_text, plan_text = get_dynamic_analysis_and_plan(anomaly['change'])
                 
                 card_html = f"""
@@ -365,4 +360,4 @@ else:
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
     else:
-        st.info("⚡ 雷達靜悄悄... 目前全網暫無觸發『爆量且劇烈波動』的異常標的。")
+        st.info("⚡ 雷達靜悄悄... 目前全網暫無符合『成交額 > 10M 且 漲跌幅 > 5%』的異常主力爆量標的。")
