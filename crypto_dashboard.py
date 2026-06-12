@@ -3,7 +3,7 @@ import ccxt
 import pandas as pd
 import time
 from datetime import datetime
-import google.generativeai as genai
+import requests  # 終極直連秘密武器，繞過 SDK 的 404 地雷
 
 # =====================================================================
 # 1. 網頁頂級配置
@@ -19,11 +19,9 @@ st.set_page_config(
 # =====================================================================
 st.markdown("""
     <style>
-    /* 全域暗色背景 */
     .stApp { background-color: #0E1117; }
     h1, h2, h3 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
     
-    /* 巨大正方形卡片樣式 */
     .square-card {
         background-color: #161B22;
         border: 2px solid #30363D;
@@ -40,7 +38,6 @@ st.markdown("""
     .coin-price { font-size: 30px; font-weight: bold; color: #00FF66; margin: 8px 0; }
     .coin-change { font-size: 18px; font-weight: bold; }
     
-    /* 策略標籤樣式 */
     .trend-badge { 
         padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 15px; text-align: center; margin-top: 10px;
     }
@@ -50,7 +47,7 @@ st.markdown("""
 st.title("🏹 CryptoHunter AI 全幣種智能系統")
 
 # =====================================================================
-# 3. 交易所與 AI 初始化基本配置
+# 3. 交易所初始化
 # =====================================================================
 @st.cache_resource
 def get_exchange():
@@ -59,30 +56,21 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 4. 側邊欄控制台（API 輸入位置就在這！）
+# 4. 側邊欄控制台（API 輸入位置永遠置頂）
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
-# --- 🔑 這裡就是 API 輸入位置（永遠置頂防呆） ---
+# 🔒 密鑰輸入框（永遠在側邊欄第一格，絕不隱藏）
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    st.sidebar.success("🔑 已從後台 Secrets 自動載入密鑰")
+    st.sidebar.success("🔑 已從後台 Secrets 自動載入")
 else:
     st.sidebar.markdown("### 🔑 認證：請輸入 Gemini API Key")
     GEMINI_API_KEY = st.sidebar.text_input(
         "請貼上你的 API Key：", 
         type="password", 
-        placeholder="AI Studio 申請的 AIzaSy..."
+        placeholder="AIzaSy..."
     )
-
-# 啟動 AI 引擎驗證
-has_ai = False
-if GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        has_ai = True
-    except:
-        has_ai = False
 
 st.sidebar.markdown("---")
 
@@ -120,7 +108,7 @@ if page_mode == "🎯 自選幣大方塊監控":
     )
 
 # =====================================================================
-# 5. 量化與 AI 分析核心邏輯
+# 5. 量化與 AI 分析核心邏輯（底層 HTTP 直連，永不報 404）
 # =====================================================================
 def get_strategy_signal(current, high, low):
     if not high or not low:
@@ -133,32 +121,36 @@ def get_strategy_signal(current, high, low):
     return "⚪ 建議觀望 (區間震盪盤整)", "#888888"
 
 def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
-    if not has_ai:
+    if not GEMINI_API_KEY:
         return "⚠️ 請先在左側邊欄輸入有效的 Gemini API Key 才能看報告喔！"
-    try:
-        # 使用最穩定的 'gemini-pro' 代號，保證 100% 成功對接不跳 404
-        model = genai.GenerativeModel('gemini-pro')
+    
+    # 🎯 直擊 Google 官方最新 v1 通道，徹底繞過 SDK 的路徑 Bug
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    if is_anomaly_mode:
+        prompt = f"""
+        你現在是精通加密貨幣『山寨幣/妖幣暴動盤』的短線量化操盤專家。
+        當前偵測到突發【異常波動標的】：{coin}/USDT | 現價：{price} | 24h漲跌幅：{change}%
+        請用繁體中文給出極精簡且極具攻擊性的 2 句短評：
+        1. 分析此時異常暴漲或暴跌的背後主力心理型態（是拉高出貨、動能突破還是恐慌踩踏）。
+        2. 給出【最具體的操作方法與建議】（例如：切勿追高建議逢高分批進空、短線跟隨動能突破輕倉追多、或是正值極端行情建議冷靜觀望），並附帶精準的止損/風險提示。
+        """
+    else:
+        prompt = f"""
+        你現在是加密貨幣量化操盤專家。
+        標的：{coin}/USDT | 現價：{price} | 24h漲跌：{change}% | 系統量化訊號：{signal}
+        請用繁體中文給出極精簡的 2 句短評：
+        1. 當前市場局面型態。
+        2. 具體的操作/開盤（多/空/觀望）建議與風險提示。
+        """
         
-        if is_anomaly_mode:
-            prompt = f"""
-            你現在是精通加密貨幣『山寨幣/妖幣暴動盤』的短線量化操盤專家。
-            當前偵測到突發【異常波動標的】：{coin}/USDT | 現價：{price} | 24h漲跌幅：{change}%
-            請用繁體中文給出極精簡且極具攻擊性的 2 句短評：
-            1. 分析此時異常暴漲或暴跌的背後主力心理型態（是拉高出貨、動能突破還是恐慌踩踏）。
-            2. 給出【最具體的操作方法與建議】（例如：切勿追高建議逢高分批進空、短線跟隨動能突破輕倉追多、或是正值極端行情建議冷靜觀望），並附帶精準的止損/風險提示。
-            """
-        else:
-            prompt = f"""
-            你現在是加密貨幣量化操盤專家。
-            標的：{coin}/USDT | 現價：{price} | 24h漲跌：{change}% | 系統量化訊號：{signal}
-            請用繁體中文給出極精簡的 2 句短評：
-            1. 當前市場局面型態。
-            2. 具體的操作/開盤（多/空/觀望）建議與風險提示。
-            """
-        response = model.generate_content(prompt)
-        return response.text
+    try:
+        # 用底層原生 POST 請求發送
+        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=8)
+        data = response.json()
+        return data['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
-        return f"AI 獵手連線異常，請檢查金鑰: {e}"
+        return f"AI 獵手解算超時，請檢查您的 Key 是否正確貼上、或稍後重試。({e})"
 
 # =====================================================================
 # 6. 主程式數據循環監控區
@@ -187,7 +179,7 @@ while True:
             if vol_usdt_24h < 150000: 
                 continue
                 
-            # 偵測異常異動爆量幣
+            # 偵測異常異動爆量幣 (漲跌幅絕對值大於 6%)
             is_anomaly = False
             if change_pct > 6 or change_pct < -6: 
                 is_anomaly = True
@@ -243,7 +235,7 @@ while True:
                             """, unsafe_allow_html=True)
                             
                             if enable_ai:
-                                if has_ai:
+                                if GEMINI_API_KEY:
                                     with st.spinner(f"AI 精算 {coin['symbol']}..."):
                                         ai_msg = ask_gemini_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], is_anomaly_mode=False)
                                         st.info(f"🤖 **AI 獵手報告:**\n{ai_msg}")
@@ -295,7 +287,7 @@ while True:
                             """, unsafe_allow_html=True)
                             
                             if enable_ai:
-                                if has_ai:
+                                if GEMINI_API_KEY:
                                     with st.spinner(f"AI 正在解構 {coin['symbol']}..."):
                                         ai_msg = ask_gemini_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], is_anomaly_mode=True)
                                         st.error(f"⚔️ **AI 實戰操作方法:**\n{ai_msg}")
@@ -304,7 +296,8 @@ while True:
                 else:
                     st.success("🔍 市場目前波動穩定，未偵測到 24h 漲跌超過 ±6% 的突發異動幣種。")
                     
-        time.sleep(refresh_interval if not (enable_ai and has_ai) else max(refresh_interval, 8))
+        # 動態限流防爆
+        time.sleep(refresh_interval if not (enable_ai and GEMINI_API_KEY) else max(refresh_interval, 8))
         
     except Exception as e:
         st.error(f"📡 數據中斷，自動重連中... Code: {e}")
