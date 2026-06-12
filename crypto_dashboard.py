@@ -135,13 +135,14 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
     if not has_ai:
         return "⚠️ 請在左側邊欄輸入有效的 Gemini API Key 以啟用 AI 分析。"
     try:
-        # 使用最乾淨、相容所有新舊版 SDK 的全域模型配置
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 💡 終極解法：使用舊版套件絕對支援的舊代號 'gemini-pro'
+        # 這樣 SDK 在拼湊網址時就不會引發 v1beta 的 404 錯誤！
+        model = genai.GenerativeModel('gemini-pro')
         
-        # 根據不同的模式，給予 AI 不同的思考提示
+        # 透過強大的角色設定（Prompt），讓舊模型發揮出頂級量化專家的實力
         if is_anomaly_mode:
             prompt = f"""
-            你是一位精通加密貨幣『山寨幣/妖幣暴動盤』的短線量化操盤專家。
+            你現在是精通加密貨幣『山寨幣/妖幣暴動盤』的短線量化操盤專家。
             當前偵測到突發【異常波動標的】：{coin}/USDT | 現價：{price} | 24h漲跌幅：{change}%
             請用繁體中文給出極精簡且極具攻擊性的 2 句短評：
             1. 分析此時異常暴漲或暴跌的背後主力心理型態（是拉高出貨、動能突破還是恐慌踩踏）。
@@ -149,7 +150,7 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
             """
         else:
             prompt = f"""
-            你是一位加密貨幣量化操盤專家。
+            你現在是加密貨幣量化操盤專家。
             標的：{coin}/USDT | 現價：{price} | 24h漲跌：{change}% | 系統量化訊號：{signal}
             請用繁體中文給出極精簡的 2 句短評：
             1. 當前市場局面型態。
@@ -158,7 +159,8 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"AI 獵手連線異常: {e}"
+        # 如果萬一連 gemini-pro 都被你的環境封鎖，這裡會提示更換最新相容寫法
+        return f"AI 獵手對接異動中，請嘗試在終端機執行 pip install --upgrade google-generativeai 解決環境衝突。({e})"
 
 # =====================================================================
 # 6. 主程式數據循環監控區
