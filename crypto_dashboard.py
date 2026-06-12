@@ -6,10 +6,10 @@ from datetime import datetime
 import requests
 
 # =====================================================================
-# 1. 網頁頂級配置與 Session State 初始化 (防爆 Quota 安全護盾)
+# 1. 網頁頂級配置與 Session State 初始化
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | 側邊切換版",
+    page_title="CryptoHunter | 雙核終極版",
     layout="wide"
 )
 
@@ -31,16 +31,25 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 3. 側邊欄控制台 (所有設定與切換視窗都在這！)
+# 3. 側邊欄控制台 (所有設定與切換視窗)
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
-# 🔑 API Key 輸入框
-api_key = st.sidebar.text_input("Gemini API Key", type="password", placeholder="AIzaSy...")
+# 🔒 【終極密鑰安全讀取機制】：優先讀取後台 secrets，沒有才跳輸入框
+GEMINI_API_KEY = None
+
+if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    st.sidebar.success("🔑 已從後台 Secrets 自動載入密鑰")
+else:
+    st.sidebar.markdown("### 🔑 認證：請輸入 Gemini API Key")
+    user_key = st.sidebar.text_input("請貼上你的 API Key：", type="password", placeholder="AI Studio 申請的 AIzaSy...")
+    if user_key:
+        GEMINI_API_KEY = user_key
 
 st.sidebar.markdown("---")
 
-# 🧭 【你的核心意見】：在側邊欄刷新頻率旁邊，直接做視窗切換控制器
+# 🧭 側邊欄分頁切換器
 page_view = st.sidebar.radio(
     "🧭 請選擇主畫面顯示視窗",
     ["📊 自選幣即時行情", "🔬 AI 獵手復盤鑑定"],
@@ -85,10 +94,10 @@ def get_strategy_signal(current, high, low):
     return "⚪ 建議觀望 (區間震盪盤整)", "#888888"
 
 def ask_gemini_replay_analysis(coin, price, change, volume, high, low):
-    if not api_key:
-        return "⚠️ 請先在左側邊欄輸入有效的 Gemini API Key 才能看報告喔！"
+    if not GEMINI_API_KEY:
+        return "⚠️ 請先在左側邊欄輸入或配置有效的 Gemini API Key 才能看報告喔！"
     
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"""
     你現在是精通加密貨幣『突發爆量/主力妖幣異動』的頂級短線量化操盤專家。
@@ -222,7 +231,7 @@ with col_main:
                 st.session_state.last_replay_coin = replay_coin
                 st.rerun()
 
-        # 執行門禁邏輯 (按完立刻鎖上閘門，下一輪自動整理絕不連發)
+        # 執行防連發門禁邏輯
         if st.session_state.ai_triggered:
             st.session_state.ai_triggered = False 
             if target_replay_data:
@@ -262,7 +271,7 @@ with col_radar:
         st.success("🔍 全網目前波動穩定，尚未偵測到暴動幣。")
 
 # =====================================================================
-# 6. 非阻塞式脈搏刷新 (每輪冷卻後自動重組，解決 Spinner 卡死與 while 死迴圈問題)
+# 6. 非阻塞式脈搏刷新 
 # =====================================================================
 time.sleep(refresh_interval)
 st.rerun()
