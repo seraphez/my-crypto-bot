@@ -37,7 +37,7 @@ st.markdown("""
         border-radius: 16px;
         padding: 24px;
         margin-bottom: 20px;
-        min-height: 240px;
+        min-height: 260px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -100,36 +100,40 @@ def get_all_usdt_symbols():
 all_available_cryptos = get_all_usdt_symbols()
 
 # =====================================================================
-# 3. 終極解法：網址參數化（F5 重新整理、自動刷新絕對死鎖不跑針）
+# 3. 終極相容解法：網址參數化（完美支援舊版環境，F5 刷新死鎖不跑針）
 # =====================================================================
-qp = st.query_parameters
+try:
+    qp = st.experimental_get_query_params()
+except:
+    qp = {}
 
-# A. 讀取自選幣 (優先由網址列接管排序)
+# A. 讀取自選幣
 if "favs" in qp:
-    raw_url_favs = qp.get_all("favs")
+    raw_url_favs = qp["favs"]
     init_favs = [f"{f}/USDT" if not f.endswith("/USDT") else f for f in raw_url_favs]
 else:
     init_favs = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
 
 # B. 讀取刷新頻率
 if "refresh" in qp:
-    try: init_refresh = int(qp["refresh"])
+    try: init_refresh = int(qp["refresh"][0])
     except: init_refresh = 5
 else:
     init_refresh = 5
 
 # C. 讀取自動 AI 開關
 if "auto" in qp:
-    init_auto = qp["auto"].lower() == "true"
+    init_auto = qp["auto"][0].lower() == "true"
 else:
     init_auto = False
 
-# 將讀取到的最高智慧參數寫入記憶體初始化
+# 將經由 URL 驗證過的精神指引參數寫入記憶體
 if "real_favs" not in st.session_state: st.session_state.real_favs = init_favs
 if "real_refresh" not in st.session_state: st.session_state.real_refresh = init_refresh
 if "ai_auto_run" not in st.session_state: st.session_state.ai_auto_run = init_auto
 if "single_coin_ai" not in st.session_state: st.session_state.single_coin_ai = {}
 if "last_coin_ai_time" not in st.session_state: st.session_state.last_coin_ai_time = {}
+if "global_ai_cooldown" not in st.session_state: st.session_state.global_ai_cooldown = 0.0
 
 # =====================================================================
 # 4. 側邊欄控制台 (即時同步網址列，徹底拔除預設參數衝突)
@@ -146,7 +150,6 @@ else:
 
 valid_defaults = [s for s in st.session_state.real_favs if s in all_available_cryptos]
 
-# 元件動態接收記憶體狀態
 chosen_favs = st.sidebar.multiselect(
     "🎯 自選監控區 (可滑鼠拖曳與調整自訂排序)",
     options=all_available_cryptos,
@@ -164,7 +167,7 @@ chosen_auto = st.sidebar.checkbox(
     value=st.session_state.ai_auto_run
 )
 
-# 💡 核心聯動：只要任何一個元件被更動，立刻更新記憶體與 URL，並下達最高指示 Rerun 鎖定
+# 💡 核心同步鎖：只要有人工變更，立刻同步到 URL，F5 的天生剋星
 if (chosen_favs != st.session_state.real_favs or 
     chosen_refresh != st.session_state.real_refresh or 
     chosen_auto != st.session_state.ai_auto_run):
@@ -173,14 +176,17 @@ if (chosen_favs != st.session_state.real_favs or
     st.session_state.real_refresh = chosen_refresh
     st.session_state.ai_auto_run = chosen_auto
     
-    # 即時鎖定到網址列上，F5 的終極剋星
-    st.query_parameters["favs"] = [s.replace("/USDT", "") for s in chosen_favs]
-    st.query_parameters["refresh"] = str(chosen_refresh)
-    st.query_parameters["auto"] = str(chosen_auto).lower()
+    # 寫入舊版相容網址列
+    url_favs_clean = [s.replace("/USDT", "") for s in chosen_favs]
+    st.experimental_set_query_params(
+        favs=url_favs_clean,
+        refresh=[str(chosen_refresh)],
+        auto=[str(chosen_auto).lower()]
+    )
     st.rerun()
 
 # 自動脈搏計時刷新器安全部署
-st_autorefresh(interval=st.session_state.real_refresh * 1000, key="sakura_steel_heartbeat")
+st_autorefresh(interval=st.session_state.real_refresh * 1000, key="sakura_steel_heartbeat_v4")
 
 # =====================================================================
 # 5. Gemini 精準下單機會調研函數
@@ -202,13 +208,13 @@ def ask_gemini_single_coin(coin, price, change, vol_str):
         response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
         data = response.json()
         if 'error' in data: 
-            return f"❌ 頻率受限提示: {data['error'].get('message', '請等待下個週期重新排隊。')}"
+            return f"❌ 頻率限制: {data['error'].get('message', '請等待下個週期重新排隊。')}"
         return data['candidates'][0]['content']['parts'][0]['text']
     except Exception as e: 
         return f"⚠️ 網路傳輸異常 ({e})"
 
 # =====================================================================
-# 6. 數據掃描中心 (100% 遵從自選排序、剔除雜訊代碼)
+# 6. 數據掃描中心 (100% 遵從自選排序、剔除無用路人代碼)
 # =====================================================================
 try:
     all_tickers = exchange.fetch_tickers()
@@ -217,7 +223,6 @@ except:
 
 fav_data_list = []
 
-# 建立乾淨的自選數據流
 for symbol in st.session_state.real_favs:
     if symbol in all_tickers:
         ticker = all_tickers[symbol]
@@ -235,7 +240,7 @@ for symbol in st.session_state.real_favs:
 # =====================================================================
 # 7. 主畫面佈局 (正方形發光矩陣卡片艙)
 # =====================================================================
-st.title("🏹 CryptoHunter 智能雷達 (櫻之自選研究艙)")
+st.title("🏹 CryptoHunter 智能雷達 (櫻之自選純淨艙)")
 st.write(f"⏱ 數據脈搏更新時間：`{datetime.now().strftime('%H:%M:%S')}`")
 st.markdown("---")
 
@@ -243,7 +248,7 @@ if fav_data_list:
     cols = st.columns(3)
     current_time = time.time()
     
-    # 🎯 智慧排隊調研邏輯：全自動開啟時，每個重整週期「最多只允許一個過期幣」去請求 API，徹底拉開頻率間隔
+    # 🎯 鋼鐵防爆盾邏輯：全自動開啟時，一整個重整週期「只允許更新一隻幣」，且與上一次任何請求必須間隔15秒以上！
     auto_api_triggered = False
     
     for idx, coin in enumerate(fav_data_list):
@@ -251,7 +256,7 @@ if fav_data_list:
             c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
             c_sign = "+" if coin['change'] >= 0 else ""
             
-            # HTML 渲染正方形卡片
+            # HTML 渲染奢華正方形卡片頂部
             card_top_html = f"""
             <div class="square-coin-card">
                 <div>
@@ -265,24 +270,26 @@ if fav_data_list:
             
             # --- 雙模 AI 調研處理中心 ---
             if st.session_state.ai_auto_run:
-                # 【全自動排隊模式】
+                # 【全自動智慧排隊分時模式】
                 last_update = st.session_state.last_coin_ai_time.get(coin['symbol'], 0.0)
                 time_elapsed = current_time - last_update
+                global_elapsed = current_time - st.session_state.global_ai_cooldown
                 
-                # 冷卻防護：單幣滿 300 秒且目前排隊輪到它發言
-                if time_elapsed > 300.0 and not auto_api_triggered:
-                    with st.spinner(f"🔄 自動排隊調研：{coin['symbol']}..."):
+                # 滿足單幣冷卻滿 300 秒，且全局間隔滿 15 秒，且本週期還沒放行過任何請求
+                if time_elapsed > 300.0 and global_elapsed > 15.0 and not auto_api_triggered:
+                    with st.spinner(f"🔄 自動分時排隊調研中：{coin['symbol']}..."):
                         res = ask_gemini_single_coin(coin['symbol'], coin['price'], coin['change'], coin['volume_str'])
                         if "❌" not in res and "⚠️" not in res:
                             st.session_state.single_coin_ai[coin['symbol']] = res
                             st.session_state.last_coin_ai_time[coin['symbol']] = current_time
-                            auto_api_triggered = True  # 鎖定，本週期不允許其他幣再發送
+                            st.session_state.global_ai_cooldown = current_time
+                            auto_api_triggered = True # 鎖定本週期
                 
                 countdown = max(0, int(300 - time_elapsed))
                 if countdown > 0:
-                    st.caption(f"🤖 自動監控中... (冷卻安全盾剩餘 {countdown} 秒)")
+                    st.caption(f"🤖 自動監控中... (防爆護盾剩餘 {countdown} 秒)")
                 else:
-                    st.caption("⏳ 進入分析隊列，等待下個脈搏訊號點...")
+                    st.caption("⏳ 已進入冷卻完畢隊列，等待分時排隊訊號...")
             else:
                 # 【手動精確戰研模式】
                 if st.button(f"⚡ 執行 {coin['symbol']} AI 戰研", key=f"btn_sakura_{coin['symbol']}", use_container_width=True):
@@ -290,6 +297,7 @@ if fav_data_list:
                         res = ask_gemini_single_coin(coin['symbol'], coin['price'], coin['change'], coin['volume_str'])
                         st.session_state.single_coin_ai[coin['symbol']] = res
                         st.session_state.last_coin_ai_time[coin['symbol']] = current_time
+                        st.session_state.global_ai_cooldown = current_time
                     st.rerun()
             
             # --- 持久化分析結果渲染 ---
