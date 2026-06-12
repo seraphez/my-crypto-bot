@@ -9,11 +9,11 @@ from streamlit_autorefresh import st_autorefresh
 # 1. 網頁頂級配置與【手機/電腦雙模自適應】黑客風 CSS 注入
 # =====================================================================
 st.set_page_config(
-    page_title="CryptoHunter | 爆量下單完全體",
+    page_title="CryptoHunter | 幣安下單完全體",
     layout="wide"
 )
 
-# 持久化記憶體
+# 持久化記憶體，防止自動刷新時重複發送 HTTP 請求扣除 AI 額度
 if "cached_ai_analysis" not in st.session_state:
     st.session_state.cached_ai_analysis = {}
 if "previous_anomalies" not in st.session_state:
@@ -21,6 +21,7 @@ if "previous_anomalies" not in st.session_state:
 if "trigger_beep" not in st.session_state:
     st.session_state.trigger_beep = False
 
+# 強制拔除 Streamlit 計時刷新時的半透明暗化遮罩（徹底消滅畫面變暗閃爍的 Bug）
 st.markdown("""
     <style>
     div[data-testid="stForm"] { background-color: transparent !important; }
@@ -28,13 +29,14 @@ st.markdown("""
     .stApp { background-color: #0E1117; }
     h1, h2, h3, h4 { color: #00FFCC !important; font-family: 'Courier New', monospace; }
     
+    /* 你的巨大正方形卡片樣式 */
     .square-card {
         background-color: #161B22;
         border: 2px solid #30363D;
         border-radius: 15px;
         padding: 22px;
         margin-bottom: 15px;
-        min-height: 250px; /* 稍微加高以容納下單建議文字 */
+        min-height: 290px; /* 加高以容納下單建議與下單按鈕 */
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -52,17 +54,36 @@ st.markdown("""
         font-size: 13px;
         color: #E5E7EB;
         margin-top: 10px;
-        border-left: 4px solid #00FFCC;
+        border-left: 4px solid #F3BA2F; /* 改為幣安經典黃色左邊條 */
         line-height: 1.4;
     }
 
+    /* ⚡ 前往幣安下單按鈕樣式 */
+    .btn-trade {
+        display: block;
+        text-align: center;
+        background-color: #F3BA2F; /* 滿血還原幣安黃色按鈕 */
+        color: #000 !important;
+        padding: 10px;
+        border-radius: 8px;
+        text-decoration: none !important;
+        font-weight: bold;
+        margin-top: 12px;
+        font-size: 14px;
+        transition: background-color 0.2s ease;
+    }
+    .btn-trade:hover {
+        background-color: #E2AD26;
+    }
+
     @media (max-width: 768px) {
-        .square-card { padding: 15px; min-height: 200px; margin-bottom: 12px; border-radius: 10px; }
+        .square-card { padding: 15px; min-height: 240px; margin-bottom: 12px; border-radius: 10px; }
         .coin-title { font-size: 18px; }
         .coin-price { font-size: 22px; margin: 4px 0; }
         .coin-change { font-size: 15px; }
         .trend-badge { padding: 6px 10px; font-size: 12px; margin-top: 4px; }
         .trade-advice { font-size: 11px; padding: 8px; margin-top: 6px; }
+        .btn-trade { padding: 8px; font-size: 12px; margin-top: 8px; }
         h1 { font-size: 22px !important; }
         h2 { font-size: 18px !important; }
         h3 { font-size: 16px !important; }
@@ -76,7 +97,7 @@ st.markdown("""
 # =====================================================================
 @st.cache_resource
 def get_exchange():
-    return ccxt.okx()
+    return ccxt.okx() # 底層雷達掃描與數據維持使用 OKX
 
 exchange = get_exchange()
 
@@ -143,7 +164,7 @@ fav_cryptos = st.sidebar.multiselect(
 refresh_interval = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=default_refresh)
 alert_volume = st.sidebar.slider("🔊 雷達警報音量", min_value=0.0, max_value=1.0, value=default_volume, step=0.1)
 
-# 即時把最新設定覆寫回 URL 網址列
+# 即時把最新設定覆寫回 URL 網址列，實現重開免重新調整
 st.query_parameters.update({
     "view": page_view,
     "refresh": str(refresh_interval),
@@ -161,7 +182,7 @@ def get_strategy_signal(current, high, low):
     elif current < mid * 0.985: return "🔴 推薦開空 (跌破空頭弱勢區)", "#FF3366"
     return "⚪ 建議觀望 (區間震盪盤整)", "#888888"
 
-# 🎯 【全新演算法】：全自動爆量方格下單狙擊指引
+# 🎯 全自動爆量方格下單狙擊指引
 def get_anomaly_trade_advice(change_pct):
     if change_pct >= 10.0:
         return "⚠️ 主力瘋狂強拉！現價拉開極度超買，直接追多極易被埋，建議等待 5 分鐘 K 線回踩均線不破再行切入。"
@@ -172,6 +193,13 @@ def get_anomaly_trade_advice(change_pct):
     elif -10.0 < change_pct <= -5.0:
         return "🔴 空頭大單強力砸盤！短線順勢開空動能充足，下單防守點建立在上方最近的整數關卡或壓力線。"
     return "⚪ 動能洗盤盤整中，暫不符合狙擊開盤標準。"
+
+# ⚡ 【全新重構】：生成 Binance (幣安) 精準現貨交易對跳轉按鈕連結
+def get_binance_trade_button_html(symbol):
+    # 將代號轉換為幣安現貨網址格式，例如 SOL/USDT -> SOL_USDT
+    formatted_symbol = symbol.replace("/", "_").upper()
+    url = f"https://www.binance.com/zh-TC/trade/{formatted_symbol}?type=spot"
+    return f'<a href="{url}" target="_blank" class="btn-trade">⚡ 前往幣安下單</a>'
 
 def ask_gemini_market_analysis(coin, price, change, signal, vol_24h):
     if not api_key: return "⚠️ 請先配置 Gemini API Key"
@@ -262,96 +290,4 @@ if page_view == "📊 自選戰研與 AI 建議":
                 st.markdown(f"現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
                 st.write(f"系統量化訊號: {coin['signal_text']}")
                 
-                if "觀望" not in coin['signal_text'] and coin['symbol'] not in st.session_state.cached_ai_analysis:
-                    with st.spinner(f"正在調研 {coin['symbol']}..."):
-                        ai_res = ask_gemini_market_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], coin['volume_str'])
-                        st.session_state.cached_ai_analysis[coin['symbol']] = ai_res
-                
-                report_output = st.session_state.cached_ai_analysis.get(coin['symbol'], "⚪ 該標的目前正處於安全震盪區間內，量化訊號建議觀望，暫無下單指引。")
-                if "🟢" in coin['signal_text']: st.success(report_output)
-                elif "🔴" in coin['signal_text']: st.error(report_output)
-                else: st.info(report_output)
-                st.markdown("---")
-        else:
-            st.info("請在側邊欄勾選監控幣種！")
-
-    with col_right:
-        st.subheader("📊 行情卡片看板 (右區：行情監控)")
-        st.markdown("---")
-        if fav_data_list:
-            fav_cols = st.columns(2)
-            for idx, coin in enumerate(fav_data_list):
-                with fav_cols[idx % 2]:
-                    c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
-                    c_sign = "+" if coin['change'] >= 0 else ""
-                    st.markdown(f"""
-                        <div class="square-card">
-                            <div>
-                                <div class="coin-title">🪙 {coin['symbol']}/USDT</div>
-                                <div class="coin-price">${coin['price']:,}</div>
-                                <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']:.2f}%</div>
-                            </div>
-                            <div class="trend-badge" style="background-color: {coin['signal_color']}22; color: {coin['signal_color']}; border: 1px solid {coin['signal_color']};">
-                                {coin['signal_text']}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-# ---------------------------------------------------------------------
-# 模式 B：🚨 突發爆量提醒 (大方塊徹底分流，左側注入實戰下單開盤方針)
-# ---------------------------------------------------------------------
-elif page_view == "🚨 突發爆量提醒":
-    
-    volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
-    half_len = (len(volume_anomalies) + 1) // 2
-    
-    # 🟢 左半區：【方格下單備選區】加注全自動操盤下單指引
-    with col_left:
-        st.subheader("🚨 突發爆量 (左區：方格下單備選)")
-        st.markdown("---")
-        
-        if volume_anomalies:
-            left_cols = st.columns(2)
-            for idx, coin in enumerate(volume_anomalies[:half_len]): 
-                with left_cols[idx % 2]:
-                    c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
-                    c_sign = "+" if coin['change'] >= 0 else ""
-                    
-                    # 🛠️ 自動生成實戰下單方針
-                    trade_advice = get_anomaly_trade_advice(coin['change'])
-                    
-                    st.markdown(f"""
-                        <div class="square-card">
-                            <div>
-                                <div class="coin-title">🔥 {coin['symbol']}/USDT</div>
-                                <div class="coin-price">${coin['price']:,}</div>
-                                <div class="coin-change" style="color: {c_color};">{c_sign}{coin['change']:.2f}%</div>
-                                <div class="trend-badge" style="background-color: #00FFCC22; color: #00FFCC; border: 1px solid #00FFCC;">
-                                    量: {coin['volume_str']}
-                                </div>
-                            </div>
-                            <div class="trade-advice">
-                                ⚔️ <b>狙擊指令：</b><br>{trade_advice}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.success("🔍 全網目前大盤平穩。")
-
-    # 🟡 右半區：【重點觀察名單清單】自選看板在這裡完全清空，排版絕不重疊
-    with col_right:
-        st.subheader("🚨 突發爆量 (右區：重點觀察名單)")
-        st.markdown("---")
-        
-        if volume_anomalies and len(volume_anomalies) > half_len:
-            for coin in volume_anomalies[half_len:12]:
-                c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
-                c_sign = "+" if coin['change'] >= 0 else ""
-                st.markdown(f"**👀 觀察: {coin['symbol']}** | <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
-                st.write(f"現價: `${coin['price']:,}` | 總量: `{coin['volume_str']}`")
-                st.markdown("---")
-
-# =====================================================================
-# 8. 原生無阻斷計時刷新器 (全天候高亮流暢跳動)
-# =====================================================================
-st_autorefresh(interval=refresh_interval * 1000, key="crypto_hunter_heartbeat")
+                if "觀望" not in coin['signal_text'] and coin['symbol'] not in st.session_state.cached_ai_analysis
