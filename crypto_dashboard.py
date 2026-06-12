@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import ccxt
 import pandas_ta as ta
+import time
 from sklearn.ensemble import RandomForestClassifier
 from openai import OpenAI
 import plotly.graph_objects as go
@@ -95,6 +96,9 @@ def generate_llm_report(api_key, symbol, price, rsi, trend, ml_prob):
 if st.button("🚀 啟動 AI 盤勢分析與方針制定"):
     with st.spinner("🤖 AI 正在調取交易所數據並進行大腦思維分析，請稍候..."):
         try:
+            # 模擬一下分析的加載感
+            time.sleep(1)
+            
             # 1. 獲取數據與計算網頁呈現用的指標
             df = get_crypto_data(target_coin, timeframe)
             df['EMA_20'] = ta.ema(df['close'], length=20)
