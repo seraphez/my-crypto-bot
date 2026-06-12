@@ -4,117 +4,113 @@ import pandas as pd
 import time
 from datetime import datetime
 
-# 1. 設定網頁標題與配置
+# 1. 網頁頂級配置（預設寬螢幕）
 st.set_page_config(
-    page_title="CryptoPulse | 加密貨幣即時監控面板",
-    page_icon="🪙",
+    page_title="CryptoHunter | 加密貨幣量化數據獵手",
+    page_icon="🏹",
     layout="wide"
 )
 
-# 使用 CSS 來美化網頁，讓格子（Metric）更有卡片感
+# 2. 注入自訂的 CSS 樣式（打造數據獵手的科技黑客風）
 st.markdown("""
     <style>
-        /* 讓 Metric 卡片有淡淡的背景和邊框，看起來像一個個獨立的格子 */
-        [data-testid="stMetricBlock"] {
-            background-color: #1e293b;
-            padding: 15px;
-            border-radius: 10px;
-            border: 1px solid #334155;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-        /* 調整卡片內的文字顏色，讓它在暗色背景下更好看 */
-        [data-testid="stMetricLabel"] {
-            color: #94a3b8 !important;
-            font-size: 14px !important;
-            font-weight: 600;
-        }
-        [data-testid="stMetricValue"] {
-            color: #38bdf8 !important; /* 價格給它亮藍色 */
-            font-size: 24px !important;
-        }
+    /* 全域背景與文字顏色調整 */
+    .stApp {
+        background-color: #0E1117;
+    }
+    h1, h2, h3 {
+        color: #00FFCC !important; /* 螢光青色標題 */
+        font-family: 'Courier New', Courier, monospace;
+    }
+    /* 數據卡片美化 */
+    div[data-testid="stMetric"] {
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        border-radius: 10px;
+        padding: 15px 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    /* 讓表格更有科技感 */
+    .dataframe {
+        border: 1px solid #30363D !important;
+        background-color: #161B22 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🪙 CryptoPulse 智能監控面板")
-st.markdown("本面板已串接 OKX 交易所，支援多幣種即時數據捕捉。")
+# 標題區
+st.title("🏹 CryptoHunter 數據獵手系統")
+st.markdown("`[系統狀態: 正常監控中]` 全市即時數據流、資金異常爆量、多空量化動態分析。")
 
-# 初始化交易所（改成 okx 避免地區鎖定錯誤）
 @st.cache_resource
 def get_exchange():
     return ccxt.okx()
 
 exchange = get_exchange()
 
-# 2. 側邊欄配置
-st.sidebar.header("⚙️ 控制面板")
-refresh_interval = st.sidebar.slider("⏱️ 更新頻率 (秒)", min_value=2, max_value=10, value=3)
+# 側邊欄配置
+st.sidebar.header("⚙️ 獵手核心配置")
+refresh_interval = st.sidebar.slider("數據脈搏 (秒/次)", min_value=2, max_value=15, value=3)
+min_volume = st.sidebar.number_input("最低過濾成交額 (USDT)", min_value=0, value=500000, step=100000)
 
-# 預設多放幾個幣種，體驗格子排列的效果
-selected_cryptos = st.sidebar.multiselect(
-    "🔍 選擇要監控的幣種",
-    ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT", "DOGE/USDT", "LINK/USDT", "AVAX/USDT"],
-    default=["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "DOGE/USDT"]
-)
-
-# 3. 建立即時刷新容器
+# 用於動態刷新的容器
 placeholder = st.empty()
 
-# 4. 開始即時更新迴圈
-if selected_cryptos:
-    while True:
-        try:
-            data_list = []
-            # 抓取所有選中幣種的數據
-            for symbol in selected_cryptos:
-                ticker = exchange.fetch_ticker(symbol)
-                data_list.append({
-                    "幣種": symbol,
-                    "最新價格 (USDT)": ticker['last'],
-                    "24h 最高": ticker['high'],
-                    "24h 最低": ticker['low'],
-                    "24h 成交量": round(ticker['baseVolume'], 2)
-                })
+while True:
+    try:
+        # 抓取全市行情
+        all_tickers = exchange.fetch_tickers()
+        data_list = []
+        
+        for symbol, ticker in all_tickers.items():
+            if symbol.endswith('/USDT') and ':' not in symbol:
+                vol_usdt = ticker['quoteVolume'] if ticker['quoteVolume'] else (ticker['baseVolume'] * ticker['last'] if ticker['baseVolume'] and ticker['last'] else 0)
+                
+                if vol_usdt >= min_volume:
+                    change = ticker['percentage'] if ticker['percentage'] is not None else 0.0
+                    
+                    # 數據清洗與打包
+                    data_list.append({
+                        "幣種": symbol.replace('/USDT', ''),
+                        "最新價格 (USDT)": ticker['last'],
+                        "24h 漲跌": change,
+                        "24h 最高": ticker['high'],
+                        "24h 最低": ticker['low'],
+                        "24h 成交額 (USDT)": vol_usdt
+                    })
+        
+        df = pd.DataFrame(data_list)
+        
+        if not df.empty:
+            df = df.sort_values(by="24h 成交額 (USDT)", ascending=False)
             
-            df = pd.DataFrame(data_list)
-            
-            # 刷新網頁畫面
             with placeholder.container():
-                st.write(f"🔄 最後更新時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                # 上方狀態列
+                col_status1, col_status2 = st.columns([2, 1])
+                with col_status1:
+                    st.markdown(f"⏱️ **訊號同步時間：** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
+                with col_status2:
+                    st.markdown(f"📊 **當前追蹤標的：** `{len(df)} 個現貨幣種`")
                 
-                st.subheader("📱 即時價格看板")
+                # --- 核心視覺一：三大巨頭資金監控卡片 ---
+                st.markdown("### ⚡ 全網資金焦點（成交額 Top 3）")
+                cols = st.columns(3)
+                top_3 = df.head(3).to_dict('records')
                 
-                # 【核心修改：格子化排版邏輯】
-                # 設定每排最多放 4 個格子
-                MAX_COLS = 4
-                total_cryptos = len(data_list)
+                for i, row in enumerate(top_3):
+                    with cols[i]:
+                        # 格式化成交額，變成百萬(M)或大數字
+                        vol_m = f"{row['24h 成交額 (USDT)'] / 1000000:.2f}M"
+                        st.metric(
+                            label=f"🔥 Top {i+1} 資金主戰場: {row['幣種']}/USDT",
+                            value=f"${row['最新價格 (USDT)']} USDT",
+                            delta=f"{row['24h 漲跌']}% (量: {vol_m})"
+                        )
                 
-                # 用迴圈每次處理 4 個幣種，自動換行
-                for i in range(0, total_cryptos, MAX_COLS):
-                    # 擷取這這一排要放的幣種數據（例如 0~4, 4~8...）
-                    chunk = data_list[i:i + MAX_COLS]
-                    
-                    # 根據這這一排實際有幾個幣種，建立對應數量的欄位
-                    cols = st.columns(len(chunk))
-                    
-                    # 在這一排的每個格子裡填入數據
-                    for j, row in enumerate(chunk):
-                        with cols[j]:
-                            st.metric(
-                                label=f"💰 {row['幣種']}", 
-                                value=f"{row['最新價格 (USDT)']} USDT"
-                            )
-                
-                st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("---")
                 
-                # 顯示下方完整數據表格
-                st.subheader("📊 所有監控幣種詳細行情")
-                st.dataframe(df.set_index("幣種"), use_container_width=True)
+                # --- 核心視覺二：左右雙欄數據排版 ---
+                col_left, col_right = st.columns([3, 2])
                 
-            time.sleep(refresh_interval)
-            
-        except Exception as e:
-            st.error(f"連線錯誤: {e}")
-            time.sleep(5)
-else:
-    st.warning("請在左側邊欄選擇至少一個幣種進行監控。")
+                with col_left:
+                    st.markdown("### 📊
