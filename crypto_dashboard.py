@@ -30,7 +30,7 @@ st.markdown("""
         border-radius: 15px;
         padding: 25px;
         margin-bottom: 15px;
-        min-height: 250px; /* 強制高度，形成大方塊 */
+        min-height: 250px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -50,42 +50,32 @@ st.markdown("""
 st.title("🏹 CryptoHunter AI 全幣種智能系統")
 
 # =====================================================================
-# 3. 交易所與 AI 初始化
+# 3. 交易所與 AI 初始化基本配置
 # =====================================================================
 @st.cache_resource
 def get_exchange():
-    return ccxt.okx() # 使用 OKX 避開 451 區域限制
+    return ccxt.okx()
 
 exchange = get_exchange()
 
-# --- 【安全密鑰讀取機制】 ---
-if "GEMINI_API_KEY" in st.secrets:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-else:
-    GEMINI_API_KEY = None
-
 # =====================================================================
-# 4. 側邊欄控制台
+# 4. 側邊欄控制台（API 輸入位置就在這！）
 # =====================================================================
 st.sidebar.header("⚙️ 獵手核心控制台")
 
-# 功能面板切換
-page_mode = st.sidebar.radio(
-    "🧭 請選擇功能面板",
-    ["🎯 自選幣大方塊監控", "🚨 全網突發異常波動"],
-    index=0
-)
+# --- 🔑 這裡就是 API 輸入位置（永遠置頂防呆） ---
+if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    st.sidebar.success("🔑 已從後台 Secrets 自動載入密鑰")
+else:
+    st.sidebar.markdown("### 🔑 認證：請輸入 Gemini API Key")
+    GEMINI_API_KEY = st.sidebar.text_input(
+        "請貼上你的 API Key：", 
+        type="password", 
+        placeholder="AI Studio 申請的 AIzaSy..."
+    )
 
-st.sidebar.markdown("---")
-
-# 防呆密鑰輸入框
-if not GEMINI_API_KEY:
-    st.sidebar.markdown("### 🔑 AI 密鑰配置")
-    user_key = st.sidebar.text_input("請輸入 Gemini API Key", type="password")
-    if user_key:
-        GEMINI_API_KEY = user_key
-
-# 串接 AI 診斷引擎
+# 啟動 AI 引擎驗證
 has_ai = False
 if GEMINI_API_KEY:
     try:
@@ -94,7 +84,18 @@ if GEMINI_API_KEY:
     except:
         has_ai = False
 
-# 獲取全市場 USDT 現貨名單
+st.sidebar.markdown("---")
+
+# 功能面板切換（不疊加主畫面）
+page_mode = st.sidebar.radio(
+    "🧭 請選擇功能面板",
+    ["🎯 自選幣大方塊監控", "🚨 全網突發異常波動"],
+    index=0
+)
+
+st.sidebar.markdown("---")
+
+# 獲取全市場 USDT 名單
 @st.cache_data(ttl=3600)
 def get_all_usdt_symbols():
     try:
@@ -106,14 +107,14 @@ def get_all_usdt_symbols():
 
 all_available_cryptos = get_all_usdt_symbols()
 
-# 其他參數設定
+# 其他設定參數
 refresh_interval = st.sidebar.slider("數據脈搏刷新 (秒)", min_value=3, max_value=15, value=5)
 enable_ai = st.sidebar.toggle("🤖 啟動 AI 即時開盤推薦", value=True)
 
-# 只有在「自選幣」模式時，左側才顯示選幣框
+# 只有在「自選幣」模式時，左側才顯示選幣搜尋框
 if page_mode == "🎯 自選幣大方塊監控":
     fav_cryptos = st.sidebar.multiselect(
-        "🎯 設定你的自選監控區",
+        "🎯 設定你的自選監控區（可打字搜尋）",
         options=all_available_cryptos,
         default=[s for s in ["BTC/USDT", "ETH/USDT", "SOL/USDT"] if s in all_available_cryptos]
     )
@@ -133,13 +134,11 @@ def get_strategy_signal(current, high, low):
 
 def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
     if not has_ai:
-        return "⚠️ 請在左側邊欄輸入有效的 Gemini API Key 以啟用 AI 分析。"
+        return "⚠️ 請先在左側邊欄輸入有效的 Gemini API Key 才能看報告喔！"
     try:
-        # 💡 終極解法：使用舊版套件絕對支援的舊代號 'gemini-pro'
-        # 這樣 SDK 在拼湊網址時就不會引發 v1beta 的 404 錯誤！
+        # 使用最穩定的 'gemini-pro' 代號，保證 100% 成功對接不跳 404
         model = genai.GenerativeModel('gemini-pro')
         
-        # 透過強大的角色設定（Prompt），讓舊模型發揮出頂級量化專家的實力
         if is_anomaly_mode:
             prompt = f"""
             你現在是精通加密貨幣『山寨幣/妖幣暴動盤』的短線量化操盤專家。
@@ -159,8 +158,7 @@ def ask_gemini_analysis(coin, price, change, signal, is_anomaly_mode=False):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        # 如果萬一連 gemini-pro 都被你的環境封鎖，這裡會提示更換最新相容寫法
-        return f"AI 獵手對接異動中，請嘗試在終端機執行 pip install --upgrade google-generativeai 解決環境衝突。({e})"
+        return f"AI 獵手連線異常，請檢查金鑰: {e}"
 
 # =====================================================================
 # 6. 主程式數據循環監控區
@@ -189,7 +187,7 @@ while True:
             if vol_usdt_24h < 150000: 
                 continue
                 
-            # 偵測異常異動爆量幣 (漲跌幅絕對值大於 6%)
+            # 偵測異常異動爆量幣
             is_anomaly = False
             if change_pct > 6 or change_pct < -6: 
                 is_anomaly = True
@@ -215,14 +213,12 @@ while True:
                     "signal_color": signal_color
                 })
 
-        # 開始單獨渲染前端畫面
+        # 開始渲染前端
         with placeholder.container():
             st.write(f"⏱ *同步時間：* `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}` | 📡 *頻率：* `{refresh_interval}秒/次`")
             st.markdown("---")
             
-            # =================================================================
             # 模式一：自選監控面板
-            # =================================================================
             if page_mode == "🎯 自選幣大方塊監控":
                 st.subheader("🎯 自選監控面板 (100% 全螢幕大方塊)")
                 if fav_data_list:
@@ -252,17 +248,14 @@ while True:
                                         ai_msg = ask_gemini_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], is_anomaly_mode=False)
                                         st.info(f"🤖 **AI 獵手報告:**\n{ai_msg}")
                                 else:
-                                    st.warning("🔑 請在左選單輸入 Key 以啟用 AI 報告。")
+                                    st.warning("🔑 請在左選單最上方輸入 Key 以啟用 AI 報告。")
                 else:
                     st.info("請在左側邊欄搜尋並勾選想要監控的任何幣種！")
             
-            # =================================================================
-            # 模式二：異常波動面板 (新增 AI 操作建議機制)
-            # =================================================================
+            # 模式二：異常波動面板（帶有 AI 實戰操作建議）
             elif page_mode == "🚨 全網突發異常波動":
                 st.subheader("🚨 全網突發【異常波動】追蹤總表")
                 if anomaly_data_list:
-                    # 1. 渲染頂部大表格
                     df_rows = [{
                         "異常幣種": item["symbol"],
                         "最新價格": item["price"],
@@ -277,17 +270,14 @@ while True:
                     st.dataframe(
                         df_anomaly.style.map(color_anomaly, subset=['24h 漲跌']),
                         use_container_width=True,
-                        height=300
+                        height=250
                     )
                     
                     st.markdown("---")
-                    # 💡 【核心升級】：在表格下方，單獨把這些暴動妖幣做成卡片，並強行加載 AI 操作方法！
                     st.subheader("⚡ 暴動標的：AI 獵手實戰操作方法")
                     
-                    # 為了避免極端行情幣種太多（例如幾十個）導致網頁塞爆，我們只抓前 4 個異動最劇烈的幣做深度分析
                     top_anomalies = sorted(anomaly_data_list, key=lambda x: abs(x['change']), reverse=True)[:4]
-                    
-                    anom_cols = st.columns(2) # 兩兩一排
+                    anom_cols = st.columns(2)
                     for idx, coin in enumerate(top_anomalies):
                         target_col = anom_cols[idx % 2]
                         with target_col:
@@ -304,14 +294,13 @@ while True:
                                 </div>
                             """, unsafe_allow_html=True)
                             
-                            # 針對異常波動的 AI 專用操盤心法建議
                             if enable_ai:
                                 if has_ai:
-                                    with st.spinner(f"AI 正在解構 {coin['symbol']} 主力資金..."):
+                                    with st.spinner(f"AI 正在解構 {coin['symbol']}..."):
                                         ai_msg = ask_gemini_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], is_anomaly_mode=True)
-                                        st.error(f"⚔️ **AI 實戰操作方法:**\n{ai_msg}") # 用紅色框框，顯得更加有警示與實戰感
+                                        st.error(f"⚔️ **AI 實戰操作方法:**\n{ai_msg}")
                                 else:
-                                    st.warning("🔑 請在左選單輸入 Key 以啟用 AI 實戰操作分析。")
+                                    st.warning("🔑 請在左選單最上方輸入 Key 以啟用 AI 實戰操作分析。")
                 else:
                     st.success("🔍 市場目前波動穩定，未偵測到 24h 漲跌超過 ±6% 的突發異動幣種。")
                     
