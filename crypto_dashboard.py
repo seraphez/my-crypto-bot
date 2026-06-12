@@ -130,7 +130,11 @@ def ask_gemini_analysis(coin, price, change, signal):
     if not has_ai:
         return "⚠️ 請在左側邊欄輸入有效的 Gemini API Key 以啟用 AI 分析。"
     try:
-        model = genai.GenerativeModel(model_name='gemini-1.5-flash')
+       # 💡 終極修正：強制指定 api_version='v1'，徹底繞過舊版套件自作聰明走 v1beta 的 404 Bug！
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    client=genai.client.get_default_index_client(api_version='v1')
+)
         prompt = f"""
         你是一位加密貨幣量化操盤專家。
         標的：{coin}/USDT | 現價：{price} | 24h漲跌：{change}% | 系統量化訊號：{signal}
