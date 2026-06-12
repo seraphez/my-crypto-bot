@@ -6,7 +6,7 @@ import requests
 from streamlit_autorefresh import st_autorefresh
 
 # =====================================================================
-# 1. 網頁頂級配置與【手機/電腦雙模自適應】黑客風 CSS 注入
+# 1. 網頁頂級配置與黑客風 CSS 注入
 # =====================================================================
 st.set_page_config(
     page_title="CryptoHunter | 量化策略研究艙",
@@ -21,7 +21,6 @@ if "previous_anomalies" not in st.session_state:
 if "trigger_beep" not in st.session_state:
     st.session_state.trigger_beep = False
 
-# 強制拔除 Streamlit 計時刷新時的半透明暗化遮罩
 st.markdown("""
     <style>
     div[data-testid="stForm"] { background-color: transparent !important; }
@@ -36,7 +35,7 @@ st.markdown("""
         border-radius: 15px;
         padding: 22px;
         margin-bottom: 15px;
-        min-height: 290px;
+        min-height: 310px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -45,7 +44,7 @@ st.markdown("""
     .coin-price { font-size: 30px; font-weight: bold; color: #00FF66; margin: 8px 0; }
     .coin-change { font-size: 18px; font-weight: bold; }
     
-    /* 量化分析區塊樣式 */
+    /* 量化分析區塊樣式 - 藍青色條 */
     .trend-analysis {
         background-color: #1F2937;
         padding: 12px;
@@ -57,7 +56,7 @@ st.markdown("""
         line-height: 1.5;
     }
     
-    /* 計劃下單方針專用樣式 */
+    /* 計劃下單方針專用樣式 - 翠綠色條 */
     .trade-plan {
         background-color: #1A2E26;
         padding: 12px;
@@ -70,7 +69,7 @@ st.markdown("""
     }
 
     @media (max-width: 768px) {
-        .square-card { padding: 15px; min-height: 240px; margin-bottom: 12px; border-radius: 10px; }
+        .square-card { padding: 15px; min-height: 260px; margin-bottom: 12px; border-radius: 10px; }
         .coin-title { font-size: 18px; }
         .coin-price { font-size: 22px; margin: 4px 0; }
         .coin-change { font-size: 15px; }
@@ -78,7 +77,6 @@ st.markdown("""
         h1 { font-size: 22px !important; }
         h2 { font-size: 18px !important; }
         h3 { font-size: 16px !important; }
-        div[data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -93,7 +91,7 @@ def get_exchange():
 exchange = get_exchange()
 
 # =====================================================================
-# 3. 【版本安全相容】網址查詢參數記憶機制
+# 3. 【新舊版環境完美相容】網址查詢參數記憶機制
 # =====================================================================
 try:
     if hasattr(st, "query_parameters") and not callable(st.query_parameters):
@@ -160,7 +158,7 @@ all_available_cryptos = get_all_usdt_symbols()
 
 valid_defaults = [s for s in default_favs if s in all_available_cryptos]
 fav_cryptos = st.sidebar.multiselect(
-    "🎯 設定你的自選監控區",
+    "🎯 設定你的自選監控區 (依勾選順序排定優先權)",
     options=all_available_cryptos,
     default=valid_defaults if valid_defaults else [all_available_cryptos[0]]
 )
@@ -183,32 +181,49 @@ except:
 st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
 
 # =====================================================================
-# 5. 量化與爆量動能演算法 (結合分析與下單方針)
+# 5. 【多維解耦】量化矩陣與高辨識度下單方針演算法
 # =====================================================================
 def get_strategy_signal(current, high, low):
-    if not high or not low: return "⚪ 數據不足 (暫無訊號)", "#888888"
+    if not high or not low: return "⚪ 區間盤整", "#888888"
     mid = (high + low) / 2
-    if current > mid * 1.015: return "🟢 多頭強勢 (突破中軌區間)", "#00FF66"
-    elif current < mid * 0.985: return "🔴 空頭弱勢 (跌破中軌區間)", "#FF3366"
-    return "⚪ 區間盤整 (處於波動中軌)", "#888888"
+    if current > mid * 1.015: return "🟢 多頭強勢", "#00FF66"
+    elif current < mid * 0.985: return "🔴 空頭弱勢", "#FF3366"
+    return "⚪ 區間盤整", "#888888"
 
-def get_dynamic_analysis_and_plan(change_pct):
-    if change_pct >= 10.0:
-        analysis = "📊 <b>量化結構：</b>主力瘋狂強拉，K線極速拉離 5EMA 均線，短線呈現極度超買，強烈散戶跟風盤湧入。"
-        plan = "🎯 <b>計劃下單方針：</b>禁止現價直接追多。合理埋伏點鎖定在『5分鐘K線回踩 15EMA 均線』且縮量不破時切入；防守點精確鎖定在突破平台的下沿，若跌破直接止損。"
-    elif 5.0 <= change_pct < 10.0:
-        analysis = "📊 <b>量化結構：</b>多頭量能多軌齊發，突破前期箱體壓力位，資金主力控盤痕跡明顯，健康的趨勢推進。"
-        plan = "🎯 <b>計劃下單方針：</b>短線具備右側順勢跟進資格。可於現價輕倉試倉，或等待短線回踩箱體頂部（阻力變支撐點位）時補倉。止損點嚴格設在爆量K線最低點。"
-    elif change_pct <= -10.0:
-        analysis = "📊 <b>量化結構：</b>恐慌盤踩踏，多頭爆倉鏈式反應啟動。左側接刀風險極高，盤面尚未觀察到任何主力大單護盤信號。"
-        plan = "🎯 <b>計劃下單方針：</b>此時做多極易被埋。必須等待 1分鐘K線出現『長下影線且成交量大於均值2倍』的止跌右側信號才能小幅試多，防守位即為該下影線針尖。"
-    elif -10.0 < change_pct <= -5.0:
-        analysis = "📊 <b>量化結構：</b>空頭大單強力砸盤，一舉跌破前低支撐防線，資金呈現淨流出狀態，下行慣性強烈。"
-        plan = "🎯 <b>計劃下單方針：</b>盤面由空方主導。方針應採『反彈做空』，若反彈至上方最近的整數關卡或跌破的支撐位（現轉為阻力）受阻，即為絕佳埋伏點。防守線設在阻力區上方 0.5%。"
-    else:
-        analysis = "📊 <b>量化結構：</b>波動與成交量處於常態分佈，主力無明顯進出信號，市場正進行籌碼沉澱。"
-        plan = "🎯 <b>計劃下單方針：</b>維持觀望。目前不符合量化狙擊標準，強行開盤易陷入沉悶的洗盤磨損中。"
+# 🎯 雙指標交叉比對引擎：大幅提高各個幣種之間的辨識度，拒絕複製品
+def get_matrix_analysis_and_plan(change_pct, signal_text):
+    # 狀態 1：極端暴漲 (強拉型)
+    if change_pct >= 15.0:
+        analysis = "📊 <b>量化結構：</b>突發性垂直噴發！多頭量能出現極端乖離，主力進行不計成本的暴力拉抬，市場投機情緒已達頂峰。"
+        plan = "🎯 <b>計劃下單方針：</b>風控權重高於一切，此處極易遭遇『天地針』洗盤。禁止開多，計劃在 15 分鐘 K 線跌破 5MA 均線時輕倉建立右側防守性空單，止損精確設在高點。"
     
+    # 狀態 2：多頭強勢突破
+    elif "🟢 多頭強勢" in signal_text:
+        if change_pct >= 5.0:
+            analysis = "📊 <b>量化結構：</b>健康的帶量多頭突破。量價配合良好，價格已成功站穩 24h 箱體中軌上方，且底部成交量逐步墊高，主力護盤意願強烈。"
+            plan = "🎯 <b>計劃下單方針：</b>策略採『順勢踩點進多』。可於現價分批試倉，理想二次埋伏點為回踩 5 分鐘線 30EMA 縮量不破之時；防守防線鎖定在今日早盤起漲點。"
+        else:
+            analysis = "📊 <b>量化結構：</b>低位微幅蓄勢。雖然 24h 漲幅不明顯，但價格結構已悄悄爬升至量價分佈密集區上方，屬於典型的潛在主力暗中吸籌結構。"
+            plan = "🎯 <b>計劃下單方針：</b>適合左側潛伏。可在現價微幅左側建倉多單，防守點直接設在昨日最低點，用極小虧損空間博取後續的爆量主升浪。"
+
+    # 狀態 3：空頭砸盤弱勢
+    elif "🔴 空頭弱勢" in signal_text:
+        if change_pct <= -5.0:
+            analysis = "📊 <b>量化結構：</b>空方大單傾巢而出，多頭防線出現鏈式潰敗。盤面暫無任何主力的左側承接大單，市場呈現多頭踩踏的恐慌性失血。"
+            plan = "🎯 <b>計劃下單方針：</b>嚴禁盲目抄底接刀！方針採『反彈遇阻順勢開空』。計劃在價格反彈至上方整數壓力位且 1 分鐘線出現長上影線時開空，防守設在壓力位上方 0.5%。"
+        else:
+            analysis = "📊 <b>量化結構：</b>陰跌磨損結構。多頭動能耗盡後引發的陰跌盤整，市場缺乏流動性支持，價格重心震盪下移。"
+            plan = "🎯 <b>計劃下單方針：</b>維持觀望或反彈微空。不宜重倉，若持有現貨應適度減倉，防守防線鎖定在今日高點。"
+
+    # 狀態 4：標準箱體盤整
+    else:
+        if abs(change_pct) < 3.0:
+            analysis = "📊 <b>量化結構：</b>標準高頻窄幅震盪。多空資金在此處達成微妙平衡，成交量萎縮至均值以下，屬於標準的籌碼沉澱箱體。"
+            plan = "🎯 <b>計劃下單方針：</b>無方向市場，不進行任何狙擊開盤，避免被高頻的上下歸零針磨損手續費。靜待 5 分鐘 K 線爆量突破箱體邊界後再行右側跟進。"
+        else:
+            analysis = f"📊 <b>量化結構：</b>寬幅震盪洗盤。24h 變動幅達 {change_pct}%，但未能形成單邊趨勢，主力正在通過上下洗盤清除高槓桿合約。"
+            plan = "🎯 <b>計劃下單方針：</b>採高拋低吸高勝率策略。計劃在價格觸及 24h 最高價附近佈局空單，或在 24h 最低價附近測試多單，嚴格執行區間內的小止損防守。"
+
     return analysis, plan
 
 def ask_gemini_market_analysis(coin, price, change, signal, vol_24h):
@@ -237,35 +252,51 @@ try:
 except:
     st.rerun()
 
+# 為了實現【自選幣自由排序】，這裡改以使用者勾選的順序作為基準去抓取資料
 fav_data_list = []
 volume_anomalies = []
 current_anomaly_symbols = set()
 
-for symbol, ticker in all_tickers.items():
-    if not symbol.endswith('/USDT') or ':' in symbol: continue
-    current_price = ticker['last']
-    change_pct = ticker['percentage'] if ticker['percentage'] is not None else 0.0
-    high_24h = ticker['high']
-    low_24h = ticker['low']
-    vol_base = ticker['baseVolume'] if ticker['baseVolume'] else 0
-    vol_usdt = ticker['quoteVolume'] if ticker['quoteVolume'] else (vol_base * current_price)
-    coin_clean = symbol.replace('/USDT', '')
-    
-    # 建立自選幣數據
-    if symbol in fav_cryptos:
+# A. 優先處理自選幣排序邏輯
+for symbol in fav_cryptos:
+    if symbol in all_tickers:
+        ticker = all_tickers[symbol]
+        current_price = ticker['last']
+        change_pct = ticker['percentage'] if ticker['percentage'] is not None else 0.0
+        high_24h = ticker['high']
+        low_24h = ticker['low']
+        vol_base = ticker['baseVolume'] if ticker['baseVolume'] else 0
+        vol_usdt = ticker['quoteVolume'] if ticker['quoteVolume'] else (vol_base * current_price)
+        coin_clean = symbol.replace('/USDT', '')
+        
         sig_txt, sig_col = get_strategy_signal(current_price, high_24h, low_24h)
         fav_data_list.append({
             "symbol": coin_clean, "price": current_price, "change": change_pct, 
             "signal_text": sig_txt, "signal_color": sig_col, "volume_str": f"{vol_usdt / 1000000:.2f}M USDT",
             "volume_usdt": vol_usdt
         })
-        
-    # 全網異常大單掃描基準：成交額 >= 10M 且 波動 > 5%
+
+# B. 全市場全自動爆量幣掃描
+for symbol, ticker in all_tickers.items():
+    if not symbol.endswith('/USDT') or ':' in symbol: continue
+    current_price = ticker['last']
+    change_pct = ticker['percentage'] if ticker['percentage'] is not None else 0.0
+    vol_base = ticker['baseVolume'] if ticker['baseVolume'] else 0
+    vol_usdt = ticker['quoteVolume'] if ticker['quoteVolume'] else (vol_base * current_price)
+    coin_clean = symbol.replace('/USDT', '')
+    
     if vol_usdt >= 10000000 and (change_pct > 5 or change_pct < -5):
         current_anomaly_symbols.add(coin_clean)
-        volume_anomalies.append({"symbol": coin_clean, "price": current_price, "change": change_pct, "volume_str": f"{vol_usdt / 1000000:.1f}M USDT", "volume_usdt": vol_usdt})
+        high_24h = ticker['high']
+        low_24h = ticker['low']
+        sig_txt, _ = get_strategy_signal(current_price, high_24h, low_24h)
+        volume_anomalies.append({
+            "symbol": coin_clean, "price": current_price, "change": change_pct, 
+            "volume_str": f"{vol_usdt / 1000000:.1f}M USDT", "volume_usdt": vol_usdt,
+            "signal_text": sig_txt
+        })
 
-# 🎛️ 提示音引擎
+# 🎛️ 雷達警報音效
 new_anomalies = current_anomaly_symbols - st.session_state.previous_anomalies
 if new_anomalies and alert_volume > 0: st.session_state.trigger_beep = True
 st.session_state.previous_anomalies = current_anomaly_symbols
@@ -278,33 +309,33 @@ if st.session_state.trigger_beep:
     """, unsafe_allow_html=True)
 
 # =====================================================================
-# 7. 主畫面雙欄自適應佈局 (資料分離防鎖死)
+# 7. 主畫面雙欄自適應佈局 (自選排序、解耦防重疊)
 # =====================================================================
 st.title("🏹 CryptoHunter 智能雷達")
 st.markdown("---")
 
 # ---------------------------------------------------------------------
-# 模式 A：📊 自選戰研與 AI 建議 (左右兩區只呈現自選幣相關資訊)
+# 模式 A：📊 自選戰研與 AI 建議 (精準辨識、完美自訂排序)
 # ---------------------------------------------------------------------
 if page_view == "📊 自選戰研與 AI 建議":
     col_left, col_right = st.columns([6, 6])
     
     with col_left:
-        st.subheader("📊 自選幣核心數據與 AI 調研")
-        st.write(f"⏱ 更新：`{datetime.now().strftime('%H:%M:%S')}`")
+        st.subheader("📊 自選監控核心 (已依自訂順序排列)")
+        st.write(f"⏱ 數據脈搏更新：`{datetime.now().strftime('%H:%M:%S')}`")
         st.markdown("---")
         
         if fav_data_list:
             for coin in fav_data_list:
                 c_color = "#00FF66" if coin['change'] >= 0 else "#FF3366"
                 c_sign = "+" if coin['change'] >= 0 else ""
-                st.markdown(f"### 🪙 {coin['symbol']} 調研狀態")
-                st.markdown(f"現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
-                st.write(f"量化結構訊號: {coin['signal_text']}")
+                st.markdown(f"### 🪙 {coin['symbol']} 實時狀態")
+                st.markdown(f"當前現價: `${coin['price']:,}` | 24h漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{coin['change']:.2f}%</span>", unsafe_allow_html=True)
+                st.markdown(f"系統量化狀態: <span style='color:{coin['signal_color']}; font-weight:bold;'>{coin['signal_text']}</span>", unsafe_allow_html=True)
                 
-                # 自動觸發 AI 數據分析 (非盤整區間且尚未有快取時)
+                # 自動觸發 Gemini 深度戰研報告
                 if "盤整" not in coin['signal_text'] and coin['symbol'] not in st.session_state.cached_ai_analysis:
-                    with st.spinner(f"正在調研 {coin['symbol']} 主力鏈上動向與開盤方針..."):
+                    with st.spinner(f"正在深度解析 {coin['symbol']} 主力鏈上心理學..."):
                         analysis = ask_gemini_market_analysis(coin['symbol'], coin['price'], coin['change'], coin['signal_text'], coin['volume_str'])
                         st.session_state.cached_ai_analysis[coin['symbol']] = analysis
                 
@@ -312,39 +343,38 @@ if page_view == "📊 自選戰研與 AI 建議":
                     st.info(st.session_state.cached_ai_analysis[coin['symbol']])
                 st.markdown("---")
         else:
-            st.info("請先在左側控制台勾選你想監控的自選幣。")
+            st.info("💡 控制台內空空如也，請先在左側多選欄中勾選自選監控標的。")
 
     with col_right:
-        st.subheader("📈 自選幣即時量化與方針對照")
+        st.subheader("📈 自選專屬量化結構與計劃下單方針")
         st.markdown("---")
         if fav_data_list:
             for coin in fav_data_list:
-                # 這裡只解析自選幣本身的量化結構與方針，不再參雜外部爆量幣
-                analysis, plan = get_dynamic_analysis_and_plan(coin['change'])
-                st.markdown(f"### 🪙 {coin['symbol']} 量化矩陣")
+                # 傳入「漲跌幅」與「量化狀態」雙重指標，完全移除了功能重疊與複製的問題
+                matrix_analysis, trade_plan = get_matrix_analysis_and_plan(coin['change'], coin['signal_text'])
+                st.markdown(f"### 🪙 {coin['symbol']} 矩陣戰術方針")
                 st.write(f"24h 總成交量： `{coin['volume_str']}`")
-                st.markdown(f"<div class='trend-analysis'>{analysis}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='trade-plan'>{plan}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='trend-analysis'>{matrix_analysis}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='trade-plan'>{trade_plan}</div>", unsafe_allow_html=True)
                 st.markdown("---")
 
 # ---------------------------------------------------------------------
-# 模式 B：🚨 突發爆量提醒 (全市場大單監控爆量幣如 TRUMP、XPL 等專屬地盤)
+# 模式 B：🚨 突發爆量提醒 (全市場大單黑馬卡片面板)
 # ---------------------------------------------------------------------
 else:
     st.subheader("🚨 全網突發爆量監控面板 (成交額 > 10M 且 波動 > 5%)")
     if volume_anomalies:
-        # 依成交量大小排序
+        # 依 24h 成交額大小降序排列
         volume_anomalies = sorted(volume_anomalies, key=lambda x: x['volume_usdt'], reverse=True)
         
-        # 使用響應式 3 欄位方格卡片布局
         cols = st.columns(3)
         for idx, anomaly in enumerate(volume_anomalies):
             with cols[idx % 3]:
                 c_color = "#00FF66" if anomaly['change'] >= 0 else "#FF3366"
                 c_sign = "+" if anomaly['change'] >= 0 else ""
                 
-                # 取得該全網爆量代幣的實時量化結構分析與下單計劃
-                analysis_text, plan_text = get_dynamic_analysis_and_plan(anomaly['change'])
+                # 爆量提醒面板同樣享有高辨識度的交叉比對矩陣
+                matrix_analysis, trade_plan = get_matrix_analysis_and_plan(anomaly['change'], anomaly['signal_text'])
                 
                 card_html = f"""
                 <div class="square-card">
@@ -353,11 +383,11 @@ else:
                         <div class="coin-price">${anomaly['price']:,}</div>
                         <div class="coin-change" style="color: {c_color};">{c_sign}{anomaly['change']:.2f}%</div>
                         <div style="color: #8B949E; font-size: 13px; margin-top: 4px;">24h成交額: {anomaly['volume_str']}</div>
-                        <div class="trend-analysis">{analysis_text}</div>
-                        <div class="trade-plan">{plan_text}</div>
+                        <div class="trend-analysis">{matrix_analysis}</div>
+                        <div class="trade-plan">{trade_plan}</div>
                     </div>
                 </div>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
     else:
-        st.info("⚡ 雷達靜悄悄... 目前全網暫無符合『成交額 > 10M 且 漲跌幅 > 5%』的異常主力爆量標的。")
+        st.info("⚡ 雷達靜悄悄... 目前全網暫無觸發大單異常流入或多頭恐慌踩踏的黑馬幣。")
