@@ -1,5 +1,6 @@
 import streamlit as st
 import ccxt
+import time
 from datetime import datetime
 import requests
 
@@ -59,7 +60,7 @@ def get_all_usdt_symbols():
 all_cryptos = get_all_usdt_symbols()
 
 # =====================================================================
-# 3. 側邊欄控制台 (最純粹的原生組件，絕不跑針)
+# 3. 側邊欄控制台
 # =====================================================================
 st.sidebar.header("🌸 櫻之量化控制台")
 
@@ -70,22 +71,47 @@ chosen_favs = st.sidebar.multiselect("🎯 自選監控區", options=all_cryptos
 chosen_refresh = st.sidebar.slider("數據脈搏刷新頻率 (秒)", min_value=3, max_value=15, value=5)
 
 # =====================================================================
-# 4. Gemini AI 請求函數
+# 4. Gemini AI 請求函數 (加入快取與防禦機制)
 # =====================================================================
 def ask_gemini_ai(coin, price, change, vol_str):
-    if not api_key: return "⚠️ 請先配置控制台的 Gemini API Key"
+    if not api_key: 
+        return "⚠️ 請先配置控制台的 Gemini API Key"
+    
+    # 🕒 1. 檢查冷卻時間（限制單一幣種 30 秒內只能戳一次 API，防止 Fragment 造成的重複請求）
+    last_call_key = f"last_call_{coin}"
+    current_time = time.time()
+    if last_call_key in st.session_state:
+        time_passed = current_time - st.session_state[last_call_key]
+        if time_passed < 30:
+            remaining = int(30 - time_passed)
+            return f"⏳ 櫻之冷卻中...請等待 {remaining} 秒後再試，避免觸發 API 頻率限制。"
+            
+    # 紀錄本次請求時間
+    st.session_state[last_call_key] = current_time
+
+    # 🔗 使用 Gemini 2.5 Flash 端點
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
     prompt = f"代幣:{coin}/USDT | 現價:{price} | 漲跌:{change}% | 24h成交額:{vol_str}。請用繁體中文給出極精簡實戰報告：1.【主力心理學】 2.【🔥 突發下單機會提醒】(給出具體多空方向與防守點，若無提示觀望)。"
+    
     try:
-        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10).json()
-        if 'error' in response: return f"❌ API 限制: {response['error'].get('message', '請等待冷卻')}"
-        return response['candidates'][0]['content']['parts'][0]['text']
-    except Exception as e: return f"⚠️ 網路傳輸異常 ({e})"
+        response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
+        
+        # 🛑 2. 處理 HTTP 429 Too Many Requests 狀態碼
+        if response.status_code == 429:
+            return "❌ 觸發 Gemini API 頻率上限 (429 Too Many Requests)。請放慢點擊速度，或改用付費版額度。"
+            
+        res_json = response.json()
+        if 'error' in res_json:
+            err_msg = res_json['error'].get('message', '未知錯誤')
+            return f"❌ API 限制: {err_msg}"
+            
+        return res_json['candidates'][0]['content']['parts'][0]['text']
+    except Exception as e: 
+        return f"⚠️ 網路傳輸異常 ({e})"
 
 # =====================================================================
 # 5. 核心：局部重新整理片段 (Fragment)
 # =====================================================================
-# 🎯 這個裝飾器是終極魔法：當這個函數自己定時重整時，整個網頁的其他地方完全靜止！
 @st.fragment(run_every=chosen_refresh)
 def render_monitor_dashboard(fav_coins):
     try: all_tickers = exchange.fetch_tickers()
@@ -94,7 +120,6 @@ def render_monitor_dashboard(fav_coins):
     st.write(f"⏱ 行情脈搏更新時間：`{datetime.now().strftime('%H:%M:%S')}` (僅局部刷新行情，其餘元件完全死鎖)")
     st.markdown("---")
     
-    # 建立 3 欄響應式正方形矩陣
     cols = st.columns(3)
     
     for idx, symbol in enumerate(fav_coins):
@@ -108,7 +133,6 @@ def render_monitor_dashboard(fav_coins):
         vol_str = f"{vol / 1000000:.2f}M USDT"
         
         with cols[idx % 3]:
-            # 使用 container 穿透美化成奢華正方形卡片
             with st.container():
                 c_color = "#00FF66" if change >= 0 else "#FF3366"
                 c_sign = "+" if change >= 0 else ""
@@ -119,18 +143,25 @@ def render_monitor_dashboard(fav_coins):
                 st.markdown(f"漲跌: <span style='color:{c_color}; font-weight:bold;'>{c_sign}{change:.2f}%</span> | 24h量: `{vol_str}`", unsafe_allow_html=True)
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # 手動精確戰研按鈕 (點擊時只會觸發這個 fragment rerun，速度極快)
-                if st.button(f"⚡ 執行 {coin_name} AI 戰研", key=f"btn_{coin_name}", use_container_width=True):
+                # 🛠️ 修正點：點擊時先顯示讀取動畫，並強制停用按鈕，防止 Fragment 刷新干擾
+                button_key = f"btn_{coin_name}"
+                if st.button(f"⚡ 執行 {coin_name} AI 戰研", key=button_key, use_container_width=True):
                     with st.spinner("深度調研主力籌碼流向中..."):
                         res = ask_gemini_ai(coin_name, price, change, vol_str)
-                        # 將結果單獨鎖進 session_state
                         st.session_state[f"ai_res_{coin_name}"] = res
+                        # 💡 關鍵：請求完立刻觸發一次當前 Fragment rerun，鎖定文字狀態
+                        st.rerun(scope="fragment")
                 
-                # --- AI 戰研結果完美渲染區 (局部刷新絕對不會洗掉它！) ---
+                # AI 戰研結果完美渲染區
                 cache_key = f"ai_res_{coin_name}"
                 if cache_key in st.session_state:
                     ai_text = st.session_state[cache_key]
-                    if "下單機會" in ai_text or "🔥" in ai_text:
+                    # 如果回傳的是冷卻提示或錯誤，用特殊的樣式呈現
+                    if "⏳" in ai_text:
+                        st.warning(ai_text)
+                    elif "❌" in ai_text or "⚠️" in ai_text:
+                        st.error(ai_text)
+                    elif "下單機會" in ai_text or "🔥" in ai_text:
                         st.warning(ai_text)
                     else:
                         st.info(ai_text)
