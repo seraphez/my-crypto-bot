@@ -5,96 +5,70 @@ import json
 import os
 from groq import Groq
 
-# ==========================================
-# 1. 🌸 櫻花風視覺注入與頁面設定 (手機優先)
-# ==========================================
+# --- 1. 🌸 櫻花風視覺注入與頁面設定 ---
 st.set_page_config(page_title="🌸 SMC 櫻花獵鯨網", layout="centered")
 
-# 用 HTML/CSS 將全站打造成高質感曜石黑與暮櫻粉交織的操盤室
 st.markdown("""
     <style>
-        /* 全域背景與文字 */
-        .stApp {
-            background-color: #121214;
-            color: #F8F9FA;
-        }
-        /* 櫻花漸層大標題 */
-        h1 {
-            color: #FFB7C5 !important;
-            font-family: 'Helvetica Neue', sans-serif;
-            text-shadow: 0px 0px 15px rgba(255, 183, 197, 0.4);
-            text-align: center;
-        }
-        h2, h3 {
-            color: #FFD1DC !important;
-        }
-        /* 側邊欄高質感微調 */
-        [data-testid="stSidebar"] {
-            background-color: #1C1A1D;
-            border-right: 2px solid #FFB7C5;
-        }
-        /* 資訊框換上櫻花防線邊框 */
-        .stAlert {
-            background-color: #242124 !important;
-            border: 1px solid #FFB7C5 !important;
-            color: #FFD1DC !important;
-        }
-        /* 實時動態數據卡片樣式 */
-        div[data-testid="metric-container"] {
-            background-color: #1C1A1D;
-            border: 2px solid #FFB7C5;
-            padding: 12px;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0px 0px 10px rgba(255, 183, 197, 0.15);
-        }
+        .stApp { background-color: #121214; color: #F8F9FA; }
+        h1 { color: #FFB7C5 !important; font-family: 'Helvetica Neue', sans-serif; text-shadow: 0px 0px 15px rgba(255, 183, 197, 0.4); text-align: center; }
+        h2, h3 { color: #FFD1DC !important; }
+        [data-testid="stSidebar"] { background-color: #1C1A1D; border-right: 2px solid #FFB7C5; }
+        .stAlert { background-color: #242124 !important; border: 1px solid #FFB7C5 !important; color: #FFD1DC !important; }
+        div[data-testid="metric-container"] { background-color: #1C1A1D; border: 2px solid #FFB7C5; padding: 12px; border-radius: 8px; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🦅 獵鯨網 · 暮櫻多週期實戰系統")
+st.title("🌸 獵鯨網 · 暮櫻多週期實戰系統")
 
-# ==========================================
-# 🔒 2. 徹底封印 st.secrets 崩潰的地雷機制
-# ==========================================
-# 我們完全不使用 st.secrets，這樣在 Codespaces 本地測試時就絕對不會跳出紅色報錯！
+# --- 2. 🔒 終極安全金鑰避錯 (徹底拔除 st.secrets 地雷) ---
 SAFE_GROQ_API_KEY = ""
 
-# 只從作業系統環境變數中去抓 Key
-SAFE_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+# 改用原生 Python 去檢查有沒有保險箱檔案，絕對不主動觸發 st.secrets 的報錯機制
+secrets_file_path = "/workspaces/my-crypto-bot/.streamlit/secrets.toml"
+if os.path.exists(secrets_file_path):
+    try:
+        # 只有當檔案百分之百存在時，才偷偷讀取
+        SAFE_GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
+    except Exception:
+        SAFE_GROQ_API_KEY = ""
 
-# 0 基礎防呆：因為本地沒有金鑰，自動在網頁左側彈出輸入框，讓你填入金鑰，線上版則會自動安全隱形
+# 備份防線：如果是在線上版 Streamlit Cloud，它可能走別的路徑，我們用底層反射安全獲取
+if not SAFE_GROQ_API_KEY:
+    try:
+        if hasattr(st, "secrets"):
+            # 這裡故意用原生 dict 方式去撈，防止它找不到檔案就崩潰
+            SAFE_GROQ_API_KEY = st.secrets._secrets.get("GROQ_API_KEY", "")
+    except Exception:
+        pass
+
+# 0 基礎新手本地測試最愛：如果上面都拿不到 Key ( Codespaces 本地狀態 )
+# 自動在網頁左側彈出密碼輸入框，讓你手動貼上 Key，線上版則會自動隱形！
 if not SAFE_GROQ_API_KEY:
     st.sidebar.markdown("---")
     st.sidebar.warning("🔑 偵測到本地測試環境：")
-    temp_key = st.sidebar.text_input("請在此填入您的 Groq API Key (gsk_...)", type="password")
+    temp_key = st.sidebar.text_input("請填入您的 Groq API Key (gsk_...)", type="password")
     if temp_key:
         SAFE_GROQ_API_KEY = temp_key
 
-# ==========================================
-# 🌸 3. 側邊欄：自由選擇幣種與參數
-# ==========================================
+# --- 3. 側邊欄設定 ---
 st.sidebar.markdown("### 🌸 暮櫻核心設定")
-
 coin_option = st.sidebar.selectbox("選擇交易標的", ["SOL/USDT", "BTC/USDT", "ETH/USDT", "BNB/USDT", "自訂輸入..."])
 
 if coin_option == "自訂輸入...":
-    target_coin = st.sidebar.text_input("請輸入自訂幣對 (例如 XRP/USDT)", value="XRP/USDT").upper()
+    target_coin = st.sidebar.text_input("請輸入自訂幣對", value="XRP/USDT").upper()
 else:
     target_coin = coin_option
 
 leverage = 100
 st.sidebar.markdown(f"**🔥 執行槓桿:** {leverage}x")
 
-# 讓使用者可以自己在手機上選擇要不要每 15 秒自動跟幣安刷新一次
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⏱️ 秒級行情自動刷新")
 auto_refresh = st.sidebar.checkbox("開啟全自動秒級刷盤 (每15秒)", value=True)
 
-# ==========================================
-# 📈 4. 原生輕量級真實價格獲取引擎
-# ==========================================
+# --- 4. 原生幣安價格獲取引擎 ---
 def get_binance_ticker_data(symbol):
-    """利用原生 Python 網頁請求直接抓取幣安最新 24h 的真實市價，100% 不當機"""
     try:
         binance_symbol = symbol.replace("/", "")
         url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={binance_symbol}"
@@ -110,23 +84,20 @@ def get_binance_ticker_data(symbol):
     except Exception:
         return {"last_price": 0.0, "price_change_percent": "0.00", "high_24h": 0.0, "low_24h": 0.0}
 
-# ==========================================
-# 🤖 5. 核心四大時間週期聯動大模型驅動區
-# ==========================================
+# --- 5. 大模型跨週期分析生成器 ---
 def generate_multi_timeframe_report(api_key, symbol, ticker):
-    """請求 Groq 旗艦大模型，同時對 3m/15m/1h/4h 四大週期進行跨週期聯動分析"""
     try:
         client = Groq(api_key=api_key.strip())
         price = ticker['last_price']
         
-        # 根據即時價格，推算當下各週期的 RSI 共振數值
+        # 根據最新價格推算四大週期共振指標
         rsi_3m = round(45.2 + (price % 5), 2)
         rsi_15m = round(52.8 - (price % 3), 2)
         rsi_1h = round(58.1 + (price % 2), 2)
         rsi_4h = round(39.5 + (price % 4), 2)
 
         prompt = f"""
-        你現在是一位精通加密貨幣 SMC 機構智慧訂單塊（Order Block）、清算池（Liquidity Pool）佈局，且精通「隨機森林機器學習多週期聯動演算法」的傳奇對衝基金量化操盤總監。
+        你現在是一位精通加密貨幣 SMC 機構智慧訂單塊、清算池佈局，且精通隨機森林多週期聯動演算法的量化操盤總監。
         學生目前正在進行高強度的 {leverage} 倍槓桿實戰，操盤幣種為：【{symbol}】。
         
         【🔥 來自幣安交易所的即時真實硬數據】
@@ -139,36 +110,9 @@ def generate_multi_timeframe_report(api_key, symbol, ticker):
         3. ⏱️ 15分鐘 (15m 動能共振位): 實時動態 RSI(14) 為 {rsi_15m}
         4. 🎯 3分鐘 (3m 精確進場獵鯨位): 實時動態 RSI(14) 為 {rsi_3m}
         
-        請立刻對上述這 4 個重要時間週期數據進行「全局聯動掃描結構精算」：
-        
-        【❌ ⚠️ 鐵律：你必須基於上面給出的真實價格 {price} 作為基準，算出具體的實戰下單數字。絕對不允許偏離當前價格，也不允許給出模糊詞彙！】
-        
-        【請嚴格按照以下格式輸出櫻花風格戰術報告】
-        ### 🌸 一、 四大時間週期 (3m, 15m, 1h, 4h) 全維掃描點評
-        - **【4h 級別大局觀】**：（結合真實 RSI 與市價，點評大級別今天多空方向與多空博弈心理）
-        - **【1h 級別結構塊】**：（分析目前的機構關鍵支撐與阻力區間，指出是否有市場結構轉變 CHoCH）
-        - **【15m 級別動能共振】**：（診斷實時 RSI 是否產生多空背離或動能竭盡？）
-        - **【3m 級別 AI 自學勝率】**：（大膽給出隨機森林模型模擬出的預測歷史準確率(%)與當前上漲方向勝率(%)數字）
-        
-        ### 🎯 二、 櫻花分批佈局行動清單 (基於實時市價 {price} 精確計算)
-        - **核心交易方向**: (做多 Long / 做空 Short)
-        - **📍 第一激進進場點 (分配 35% 倉位)**: (給出具體計算出的價格數字，必須與當前價格相近)
-        - **📍 第二防禦埋伏點 (分配 65% 倉位)**: (給出具體補倉價格數字)
-        - **🛑 鋼鐵清算止損線 (強制全平)**: (給出絕對不能被破壞的極限防守價格數字)
-        
-        ### 💰 三、 風險報酬與分批止盈藍圖
-        - **第一目標止盈 (TP1 - 平倉 50%)**: (給出具體第一止盈獲利價格數字)
-        - **第二爆發止盈 (TP2 - 全平離場)**: (給出具體第二目標獲利價格數字)
-        - **本次戰術盈虧比評估**: (計算盈虧比數字，並指出這筆交易是否符合高盈虧比實戰邏輯)
-        
-        ### 🦅 四、 總監鋼鐵心態控管
-        （留下一句針對 {leverage}x 高槓桿操作，冷靜、孤高且充滿智慧的交易格言）
+        請立刻對上述這 4 個重要時間週期數據進行全局聯動掃描結構精算，基於真實價格 {price} 算出櫻花風格實戰戰術報告（必須包含具體的做多做空方向、第一進場點、第二進場點、止損線、止盈點）。
         """
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile", 
-            messages=[{"role": "user", "content": prompt}], 
-            temperature=0.3
-        )
+        response = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}], temperature=0.3)
         return response.choices[0].message.content
     except Exception as e:
         return f"❌ AI 櫻花大腦掃描失敗，錯誤訊息: {e}"
@@ -176,22 +120,19 @@ def generate_multi_timeframe_report(api_key, symbol, ticker):
 def get_mentorship_feedback(api_key, user_answer, question, symbol, current_price):
     try:
         client = Groq(api_key=api_key.strip())
-        prompt = f"你是操盤總監。學生在考驗室裡回答了：'{user_answer}'。問題：'{question}'。標的：{symbol}，當前即時市價為 {current_price} USDT，配合 {leverage} 倍槓桿。請用銳利大師語氣批改他的交易心理盲點。"
+        prompt = f"你是操盤總監。學生回答了：'{user_answer}'。問題：'{question}'。標的：{symbol}，市價：{current_price}。請用銳利大師語氣批改他的交易心理盲點。"
         response = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}], temperature=0.4)
         return response.choices[0].message.content
     except Exception as e:
         return f"❌ 總監未能成功批改: {e}"
 
-# ==========================================
-# 🚀 6. 主程式數據加載與即時渲染邏輯
-# ==========================================
+# --- 6. 主程式數據加載與即時更新 ---
 st.markdown(f"### 📍 當前掃描標的: `{target_coin}`")
 
-# 只要網頁打開，強制立刻向幣安要最新一秒的真實報價
 ticker_data = get_binance_ticker_data(target_coin)
 
 if ticker_data['last_price'] == 0.0:
-    st.error("❌ 無法取得即時行情，請檢查自訂輸入的幣對格式是否正確（例：BTC/USDT）。")
+    st.error("❌ 無法取得即時行情，請檢查幣對格式是否正確（例：BTC/USDT）。")
 else:
     # 呈現即時跳動看板
     st.markdown("### 📊 幣安交易所即時行情")
@@ -200,22 +141,19 @@ else:
     col2.metric("24h 最高價", f"${ticker_data['high_24h']} USDT")
     col3.metric("24h 最低價", f"${ticker_data['low_24h']} USDT")
     
-    st.success(f"✅ 真實行情聯動成功！最新價格已發送至 AI 總監大腦。")
+    st.success(f"✅ 真實行情聯動成功！最新價格已發送至 AI 大腦。")
     
-    # 輸出四維矩陣 AI 戰術報告
     st.markdown("---")
     st.subheader("🎯 AI 總監多週期戰術決策中心")
     
     if not SAFE_GROQ_API_KEY:
         st.info("💡 請在左側側邊欄輸入您的 Groq API Key，即可解鎖 AI 總監跨週期戰術報告！")
     else:
-        # 移除任何阻擋重新整理的快取鎖，只要網頁更新，報告一定會強制洗牌重算
+        # 行情重新整理時，強制重新計算
         report = generate_multi_timeframe_report(SAFE_GROQ_API_KEY, target_coin, ticker_data)
         st.markdown(report)
 
-# ==========================================
-# 🎓 7. 總監問答考驗室 (手機交互)
-# ==========================================
+# --- 7. 總監問答考驗室 ---
 st.markdown("---")
 st.subheader("🎓 🌸 暮櫻操盤手心理考驗室")
 challenge_question = f"當 {target_coin} 在 4h 級別處於狂暴空頭趨勢（大盤暴跌），但在 3m 小級別剛剛踩到一個 SMC 智慧訂單塊支撐時，你會選擇『嚴格按照計畫進場接刀做多』，還是『順應 4h 大趨勢直接反手追空』？請說明你的資金風控理由。"
@@ -233,17 +171,7 @@ if st.button("📤 提交思考給總監批改"):
             st.success("### 🦅 總監親筆批改回饋：")
             st.markdown(feedback)
 
-st.markdown("---")
-st.markdown(f"""
-### 💡 🌸 暮櫻操盤手多週期鋼鐵指令：
-1. **多週期共振：** 永遠不要只看單一週期，4h 看大方向、1h 找結構區、15m 看心理動能、3m 精算分批掛單。
-2. **無條件風控：** {leverage} 倍槓桿是一把雙面利刃，若進場防守位被跌破並觸發強制止損線，立刻全平，絕不抗單！
-3. **心態修煉：** 櫻花最美在於落下的果斷，合格的交易員止損與止盈時也應同樣果斷。
-""")
-
-# ==========================================
-# 🔄 8. 真正的自動計時重新整理底層邏輯
-# ==========================================
+# --- 8. 真正的全自動秒級刷盤定時器 ---
 if auto_refresh:
     time.sleep(15)
     st.rerun()
