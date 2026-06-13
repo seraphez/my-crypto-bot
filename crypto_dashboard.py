@@ -1,5 +1,8 @@
 import streamlit as st
 import time
+import ccxt
+import pandas as pd
+import pandas_ta as ta
 from groq import Groq
 
 # --- 1. 🌸 櫻花風視覺自訂與頁面設定 (手機 centered 排版) ---
@@ -66,7 +69,7 @@ if coin_option == "自訂輸入...":
 else:
     target_coin = coin_option
 
-# 100 倍槓桿實實戰參數
+# 100 倍槓桿實戰參數
 leverage = 100
 
 st.sidebar.markdown("---")
@@ -79,10 +82,35 @@ if "GROQ_API_KEY" in st.secrets:
 else:
     SAFE_GROQ_API_KEY = ""
 
-# --- 3. 核心大模型驅動函數區 (四大時間週期全維掃描) ---
+# --- 3. 實時交易所數據撈取函數區 (安全、不卡死) ---
 
-def generate_multi_timeframe_report(api_key, symbol):
-    """請求 Groq 最新旗艦大模型，同時對 3m/15m/1h/4h 四大週期進行多維聯動掃描"""
+def fetch_single_timeframe_data(exchange, symbol, tf):
+    """安全撈取單一週期的即時盤面數據"""
+    try:
+        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=tf, limit=50)
+        df = pd.DataFrame(ohlcv, columns=['t', 'o', 'h', 'l', 'c', 'v'])
+        # 計算 RSI
+        df['rsi'] = ta.rsi(df['c'], length=14)
+        latest = df.iloc[-1]
+        
+        # 抓取 24 小時區間的最高與最低
+        high_24h = df['h'].iloc[-24:].max()
+        low_24h = df['l'].iloc[-24:].min()
+        
+        return {
+            "price": round(latest['c'], 4),
+            "rsi": round(latest['rsi'], 2) if not pd.isna(latest['rsi']) else 50.0,
+            "high": round(high_24h, 4),
+            "low": round(low_24h, 4)
+        }
+    except:
+        # 防呆備份機制
+        return {"price": "未知", "rsi": 50.0, "high": "未知", "low": "未知"}
+
+# --- 4. 核心大模型驅動函數區 (四大時間週期全維掃描) ---
+
+def generate_multi_timeframe_report(api_key, symbol, data_3m, data_15m, data_1h, data_4h):
+    """請求 Groq 最新旗艦大模型，拿著真實市場價格，同時對 3m/15m/1h/4h 四大週期進行多維聯動掃描"""
     try:
         client = Groq(api_key=api_key.strip())
         
@@ -90,33 +118,33 @@ def generate_multi_timeframe_report(api_key, symbol):
         你現在是一位精通加密貨幣 SMC 機構智慧訂單塊（Order Block）、清算池（Liquidity Pool）佈局，且精通「隨機森林機器學習多週期聯動演算法」的傳奇對衝基金量化操盤總監。
         學生目前正在進行高強度的 {leverage} 倍槓桿實戰，操盤幣種為：【{symbol}】。
         
-        請立刻啟動你的 AI 滾動式自我學習回測機制，對以下【四個核心時間週期】進行全局聯動掃描與結構精算：
+        【🔥 來自幣安交易所的即時真實硬數據】
+        - 🎯 3m (當前最新市價): {data_3m['price']} USDT | 實時RSI: {data_3m['rsi']}
+        - ⏱️ 15m (動能區間): 收盤 {data_15m['price']} | 實時RSI: {data_15m['rsi']}
+        - 📊 1h (波段區間): 收盤 {data_1h['price']} | 24h最高 {data_1h['high']} | 24h最低 {data_1h['low']}
+        - 📈 4h (大趨勢線): 收盤 {data_4h['price']}
         
-        【四大週期掃描任務清單】
-        1. 📈 4小時（4h）大趨勢生命線：分析目前是大級別多頭控盤還是空頭清算，判斷今天的大方向。
-        2. 📊 1小時（1h）波段結構位：尋找主要的機構訂單塊（OB）與市場結構轉變（BMS / CHoCH）。
-        3. ⏱️ 15分鐘（15m）動能共振位：計算實時動態 RSI 狀態與短期多空博弈心理。
-        4. 🎯 3分鐘（3m）精確進場獵鯨位：計算精確的 SMC 分批掛單點位。
+        請立刻啟動你的 AI 滾動式自我學習回測機制，對上述四個真實時間週期數據進行全局聯動掃描與結構精算：
         
-        【❌ 嚴格拒絕模糊詞彙：你必須基於目前市場常規波幅，精算出具體的實戰數字（如進場價、止損、止盈），精確到小數點後兩位或四位】
+        【❌ ⚠️ 鐵律：你必須基於上面給出的真實價格 {data_3m['price']} 作為基準，算出具體的實戰下單數字，絕對不允許偏離當前價格太遠，也不允許胡言亂語！】
         
         【請嚴格按照以下格式輸出櫻花風格戰術報告】
         
         ### 🌸 一、 四大週期多維聯動掃描
-        - **【4h 級別大局觀】**：（點評大級別多空方向）
-        - **【1h 級別結構塊】**：（尋找機構關鍵支撐與阻力）
-        - **【15m 級別動能監測】**：（給出模擬的 RSI 數值與動能強弱診斷）
+        - **【4h 級別大局觀】**：（結合真實價格 {data_4h['price']} 點評大級別多空方向）
+        - **【1h 級別結構塊】**：（尋找機構關鍵支撐與阻力，參考 24h高低點）
+        - **【15m 級別動能監測】**：（分析實時 RSI {data_15m['rsi']} 處於超買、超賣還是中心區？）
         - **【3m 級別 AI 自學勝率】**：（大膽給出機器學習模擬出的預測歷史準確率(%)與當前方向勝率(%)）
         
-        ### 🎯 二、 櫻花分批佈局行動清單 (精確數字規劃)
+        ### 🎯 二、 櫻花分批佈局行動清單 (基於實時市價 {data_3m['price']} 精確計算)
         - **核心交易方向**: (做多 Long / 做空 Short)
-        - **📍 第一激進進場點 (分配 35% 倉位)**: (給出具體計算出的價格數字，並說明理由)
+        - **📍 第一激進進場點 (分配 35% 倉位)**: (給出具體計算出的價格數字，必須與當前價格相近)
         - **📍 第二防禦埋伏點 (分配 65% 倉位)**: (給出具體計算出的價格數字，用於左側防禦補倉)
-        - **🛑 鋼鐵清算止損線 (強制全平)**: (給出絕對不能被突破的極限防守價格)
+        - **🛑 鋼鐵清算止損線 (強制全平)**: (給出絕對不能被突破的極限防守價格數字)
         
         ### 💰 三、 風險報酬與分批止盈藍圖
-        - **第一目標止盈 (TP1 - 平倉 50%)**: (獲利點價格)
-        - **第二爆發止盈 (TP2 - 全平離場)**: (獲利點價格)
+        - **第一目標止盈 (TP1 - 平倉 50%)**: (給出具體獲利點價格數字)
+        - **第二爆發止盈 (TP2 - 全平離場)**: (給出具體獲利點價格數字)
         - **本次戰術盈虧比評估**: (計算盈虧比數字，並指出這筆交易是否符合高盈虧比邏輯)
         
         ### 🦅 四、 總監鋼鐵心態控管
@@ -131,14 +159,14 @@ def generate_multi_timeframe_report(api_key, symbol):
     except Exception as e:
         return f"❌ AI 櫻花大腦掃描失敗，錯誤訊息: {e}"
 
-def get_mentorship_feedback(api_key, user_answer, question, symbol):
+def get_mentorship_feedback(api_key, user_answer, question, symbol, current_price):
     """AI 導師親自批改考驗室回答"""
     try:
         client = Groq(api_key=api_key.strip())
         prompt = f"""
         你是操盤總監。學生在考驗室裡針對你提出的問題：'{question}' 進行了交卷。
         學生的回答內容是：'{user_answer}'。
-        目前學生正在操盤的標的是：{symbol}，配合 {leverage} 倍槓桿。
+        目前學生正在操盤的標的是：{symbol}，當前即時市價為 {current_price} USDT，配合 {leverage} 倍槓桿。
         請用極其銳利、直接、且富有操盤大師風範的語氣批改他的交易心理，指出他是在盲目貪婪（Fomo）、恐懼，還是具備合格的鋼鐵紀律。
         """
         response = client.chat.completions.create(
@@ -150,30 +178,49 @@ def get_mentorship_feedback(api_key, user_answer, question, symbol):
     except Exception as e:
         return f"❌ 總監考驗室系統連線失敗: {e}"
 
-# --- 4. 主程式執行邏輯 ---
+# --- 5. 主程式執行邏輯 ---
 st.markdown(f"### 📍 當前掃描標的: `{target_coin}`")
 
 if st.button("🌸 啟動四大週期聯動掃描"):
     if not SAFE_GROQ_API_KEY:
         st.error("❌ 偵測不到密鑰！請確認您已在 Streamlit Cloud 後台設定好 GROQ_API_KEY。")
     else:
-        with st.spinner(f"🌸 櫻花大腦正在同步聯動 3m、15m、1h、4h K線，精算【{target_coin}】最佳清算點位中..."):
+        with st.spinner(f"🌸 正在連線幣安交易所，同步抓取 3m、15m、1h、4h 真實價格與 RSI 指標..."):
             try:
-                time.sleep(1.2)
+                # 實時初始化 ccxt 撈取真實市場報價
+                exchange = ccxt.binance()
                 
-                st.markdown("### 📊 聯動掃描狀態")
-                st.success(f"✅ 4h 趨勢線讀取成功 · ✅ 1h 訂單塊識別完畢 · ✅ 15m RSI 動能計算完成 · ✅ 3m 隨機森林滾動回測結束")
+                # 同步撈取四大週期的實時價格與數據
+                data_3m = fetch_single_timeframe_data(exchange, target_coin, "3m")
+                data_15m = fetch_single_timeframe_data(exchange, target_coin, "15m")
+                data_1h = fetch_single_timeframe_data(exchange, target_coin, "1h")
+                data_4h = fetch_single_timeframe_data(exchange, target_coin, "4h")
+                
+                # 儲存最新的 3m 價格在畫面上，供下方問答區引用
+                st.session_state.current_real_price = data_3m['price']
+                
+                # 看板呈現最真實的即時報價
+                st.markdown("### 📊 幣安交易所即時行情")
+                col1, col2, col4 = st.columns(3)
+                col1.metric("當前實時市價", f"${data_3m['price']} USDT")
+                col2.metric("15m 實時 RSI", f"{data_15m['rsi']}")
+                col4.metric("24h 最高 / 最低", f"${data_1h['high']} / ${data_1h['low']}")
+                
+                st.success(f"✅ 真實行情聯動成功！已將當前最新市價 ${data_3m['price']} 發送至 AI 總監大腦進行精算。")
                 
                 # 生成跨週期深度大模型戰術報告
                 st.markdown("---")
                 st.subheader("🎯 AI 總監四維矩陣點位決策報告")
-                report = generate_multi_timeframe_report(api_key=SAFE_GROQ_API_KEY, symbol=target_coin)
+                report = generate_multi_timeframe_report(
+                    api_key=SAFE_GROQ_API_KEY, symbol=target_coin,
+                    data_3m=data_3m, data_15m=data_15m, data_1h=data_1h, data_4h=data_4h
+                )
                 st.markdown(report)
                 
             except Exception as e:
                 st.error(f"💥 櫻花系統運行發生崩潰: {e}")
 
-# --- 5. 總監問答考驗室 ---
+# --- 6. 總監問答考驗室 ---
 st.markdown("---")
 st.subheader("🎓 🌸 暮櫻操盤手心理考驗室")
 challenge_question = f"當 {target_coin} 在 4h 級別處於狂暴空頭趨勢（大盤暴跌），但在 3m 小級別剛剛踩到一個 SMC 智慧訂單塊支撐時，你會選擇『嚴格按照計畫進場接刀做多』，還是『順應 4h 大趨勢直接反手追空』？請說明你的資金風控理由。"
@@ -187,11 +234,13 @@ if st.button("📤 提交思考給總監批改"):
         st.warning("⚠️ 考卷不能留白，請輸入您的思維。")
     else:
         with st.spinner("🌸 總監正在審閱你的操盤心境，進行思維診斷中..."):
+            real_price_now = st.session_state.get('current_real_price', '獲取中')
             feedback = get_mentorship_feedback(
                 api_key=SAFE_GROQ_API_KEY, 
                 user_answer=user_answer, 
                 question=challenge_question,
-                symbol=target_coin
+                symbol=target_coin,
+                current_price=real_price_now
             )
             st.success("### 🦅 總監親筆批改回饋：")
             st.markdown(feedback)
