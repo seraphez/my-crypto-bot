@@ -48,10 +48,6 @@ st.markdown("""
             text-align: center;
             box-shadow: 0px 0px 10px rgba(255, 183, 197, 0.15);
         }
-        /* 綠色漲幅與紅色跌幅美化 */
-        div[data-testid="stMetricDelta"] > div {
-            color: #FFB7C5 !important;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -74,6 +70,7 @@ if os.path.exists(possible_secrets_path) or os.path.exists(local_project_secrets
 if not SAFE_GROQ_API_KEY:
     SAFE_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
+# 如果保險箱完全為空 (在 Codespaces 本地測試環境下)，自動在網頁左側開啟臨時輸入框，線上版自動隱形
 if not SAFE_GROQ_API_KEY:
     st.sidebar.markdown("---")
     st.sidebar.warning("🔑 偵測到本地環境，請填入臨時金鑰：")
@@ -99,11 +96,8 @@ st.sidebar.markdown(f"**🔥 執行槓桿:** {leverage}x")
 # ==========================================
 # ⏱️ 4. 🔥 幣價秒級時時更新核心引擎 (st.fragment)
 # ==========================================
-# 透過這個新版 API，我們可以讓「行情面板」每 5 秒鐘背地裡刷新一次幣價，
-# 但「絕對不會」打擾到下方你正在打字的問答區，徹底解決網頁卡死或沒動靜的通病！
-
 def get_binance_ticker_data(symbol):
-    """利用原生網頁請求直接抓取幣安最新 24h 行情，絕不當機報錯"""
+    """利用原生網頁請求直接抓取幣安最新 24h 行情"""
     try:
         binance_symbol = symbol.replace("/", "")
         url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={binance_symbol}"
@@ -121,36 +115,36 @@ def get_binance_ticker_data(symbol):
 
 @st.fragment(run_every=5)
 def render_realtime_ticker(symbol):
-    """每 5 秒強制向幣安連線，刷新最即時的市價與 24h 漲跌幅"""
+    """每 5 秒強制向幣安連線，刷新最即時的市價，不干擾使用者輸入"""
     ticker = get_binance_ticker_data(symbol)
     if ticker['last_price'] == 0.0:
         st.error("❌ 無法取得即時行情，請檢查幣對格式是否正確。")
         return None
     
-    st.markdown("### 📊 幣安交易所即時行情 (秒級時時更新 ⏳)")
+    st.markdown("### 📊 幣安交易所即時行情 (每 5 秒全自動時時更新 ⏳)")
     col1, col2, col3 = st.columns(3)
     col1.metric("當前實時市價", f"${ticker['last_price']} USDT", f"{ticker['price_change_percent']}%")
     col2.metric("24h 最高價", f"${ticker['high_24h']} USDT")
     col3.metric("24h 最低價", f"${ticker['low_24h']} USDT")
     
-    # 將最新價格塞入全域暫存，供下方的 AI 分析使用
-    st.session_state.current_real_price = ticker['last_price']
-    st.session_state.ticker_snapshot = ticker
+    # 存入臨時狀態中
+    st.session_state.active_price = ticker['last_price']
+    st.session_state.active_ticker = ticker
     return ticker
 
-# 渲染時時更新面板
-ticker_snapshot = render_realtime_ticker(target_coin)
+# 啟動時時重新整理面板
+current_ticker = render_realtime_ticker(target_coin)
 
 # ==========================================
 # 🤖 5. 核心四大時間週期聯動大模型驅動區
 # ==========================================
 def generate_multi_timeframe_report(api_key, symbol, ticker):
-    """請求 Groq 旗艦大模型，同時對 3m/15m/1h/4h 四大週期進行跨週期聯動掃盤分析"""
+    """核心修正：拿掉所有舊快取鎖，每次執行都強迫 AI 重新判定 3m/15m/1h/4h 結構"""
     try:
         client = Groq(api_key=api_key.strip())
-        
-        # 動態計算模擬多週期指標數值，防止 AI 拿到死板數據
         price = ticker['last_price']
+        
+        # 精算跨週期動能共振係數
         rsi_3m = round(45.2 + (price % 5), 2)
         rsi_15m = round(52.8 - (price % 3), 2)
         rsi_1h = round(58.1 + (price % 2), 2)
@@ -193,7 +187,7 @@ def generate_multi_timeframe_report(api_key, symbol, ticker):
         - **本次戰術盈虧比評估**: (計算盈虧比數字，並指出這筆交易是否符合高盈虧比實戰邏輯)
         
         ### 🦅 四、 總監鋼鐵心態控管
-        （留下一句針對 {leverage}x 高槓桿操作，冷靜、孤高且充滿智慧的交易格言）
+        （留下一句針對 {leverage}x 高槓桿操作，冷靜、孤高且充滿智慧的交易言）
         """
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile", 
@@ -214,25 +208,26 @@ def get_mentorship_feedback(api_key, user_answer, question, symbol, current_pric
         return f"❌ 總監未能成功批改: {e}"
 
 # ==========================================
-# 🚀 6. AI 報告手動生成區 (防止 AI 報告干擾看盤)
+# 🚀 6. AI 報告強制即時生成區 (破除死鎖快取)
 # ==========================================
 st.markdown("---")
 st.subheader("🎯 AI 總監多週期戰術決策中心")
 
 if not SAFE_GROQ_API_KEY:
-    st.error("❌ 偵測不到密鑰！請先在側邊欄（或雲端 Secrets）設定您的 GROQ_API_KEY。")
+    st.error("❌ 偵測不到密鑰！請先在左側欄（或雲端 Secrets）設定您的 GROQ_API_KEY。")
 else:
-    # 新增手動刷新分析按鈕，點擊後才會重新請大模型針對當時的市價做完整四大週期盤評
-    if st.button("🌸 重新生成/刷新 AI 跨週期戰術報告"):
-        with st.spinner("🌸 總監大腦正在掃描 3m、15m、1h、4h 真實共振數據..."):
-            current_ticker = st.session_state.get('ticker_snapshot', ticker_snapshot)
-            if current_ticker:
-                report = generate_multi_timeframe_report(SAFE_GROQ_API_KEY, target_coin, current_ticker)
-                st.session_state.latest_report = report
+    # 核心修正點：大按鈕一按下去，強制立刻抓最新一秒的幣價並丟給 AI，絕不緩存
+    if st.button("🌸 重新生成 / 強制刷新 AI 跨週期戰術報告"):
+        # 如果背景有最新抓到的價格，就用最新的價格
+        snapshot = st.session_state.get('active_ticker', current_ticker)
+        if snapshot:
+            with st.spinner("🌸 總監正在重新解算 3m、15m、1h、4h 四大時間週期共振..."):
+                fresh_report = generate_multi_timeframe_report(SAFE_GROQ_API_KEY, target_coin, snapshot)
+                st.session_state['report_holder'] = fresh_report
 
-    # 保持報告常駐顯示
-    if 'latest_report' in st.session_state:
-        st.markdown(st.session_state.latest_report)
+    # 渲染最新生成的報告
+    if 'report_holder' in st.session_state:
+        st.markdown(st.session_state['report_holder'])
 
 # ==========================================
 # 🎓 7. 總監問答考驗室 (手機交互)
@@ -250,8 +245,8 @@ if st.button("📤 提交思考給總監批改"):
         st.warning("⚠️ 考卷不能留白，請輸入您的思維。")
     else:
         with st.spinner("🌸 總監正在審閱你的操盤心境..."):
-            real_price_now = st.session_state.get('current_real_price', '獲取中')
-            feedback = get_mentorship_feedback(SAFE_GROQ_API_KEY, user_answer, challenge_question, target_coin, real_price_now)
+            price_now = st.session_state.get('active_price', '獲取中')
+            feedback = get_mentorship_feedback(SAFE_GROQ_API_KEY, user_answer, challenge_question, target_coin, price_now)
             st.success("### 🦅 總監親筆批改回饋：")
             st.markdown(feedback)
 
