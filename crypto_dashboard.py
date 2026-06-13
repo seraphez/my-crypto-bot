@@ -75,19 +75,22 @@ leverage = 100
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**🔥 執行槓桿:** {leverage}x")
 
-# --- 🔒 安全金鑰隱形機制 + 本地相容防呆機制 ---
-SAFE_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+# --- 🔒 終極安全金鑰避錯機制 ---
+# 使用 try-except 徹底封印 StreamlitSecretNotFoundError 報錯痛點
+SAFE_GROQ_API_KEY = ""
 try:
-    if "GROQ_API_KEY" in st.secrets:
+    # 只有當雲端後台真正存在 secrets 且包含欄位時才讀取
+    if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
         SAFE_GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-except:
-    pass
+except Exception:
+    # 發生任何找不到檔案的錯誤時，直接略過，不允許程式崩潰
+    SAFE_GROQ_API_KEY = ""
 
-# 如果保險箱為空 (Codespaces 本地環境)，開啟臨時側邊欄輸入框，線上版部署後會自動隱形
+# 如果保險箱為空 (在 Codespaces 本地開發環境下)，自動開啟臨時側邊欄輸入框，線上部署後會自動隱形
 if not SAFE_GROQ_API_KEY:
     st.sidebar.markdown("---")
-    st.sidebar.warning("🔑 偵測到本地環境，請輸入臨時 Key 進行測試：")
-    temp_key = st.sidebar.text_input("臨時 Groq API Key", type="password")
+    st.sidebar.warning("🔑 偵測到本地測試環境：")
+    temp_key = st.sidebar.text_input("請填入臨時測試 Groq Key", type="password")
     if temp_key:
         SAFE_GROQ_API_KEY = temp_key
 
@@ -118,7 +121,7 @@ def fetch_single_timeframe_data(exchange, symbol, tf):
 # --- 4. 核心大模型驅動函數區 (四大時間週期全維掃描) ---
 
 def generate_multi_timeframe_report(api_key, symbol, data_3m, data_15m, data_1h, data_4h):
-    """請求 Groq 最新旗艦大模型，拿著真實市場價格，同時對 3m/15m/1h/4h 四大週期進行多維聯動掃描"""
+    """請求 Groq 最新旗艦大模型，同時對 3m/15m/1h/4h 四大週期進行多維聯動掃描"""
     try:
         client = Groq(api_key=api_key.strip())
         
@@ -191,20 +194,19 @@ st.markdown(f"### 📍 當前掃描標的: `{target_coin}`")
 
 if st.button("🌸 啟動四大週期聯動掃描"):
     if not SAFE_GROQ_API_KEY:
-        st.error("❌ 偵測不到密鑰！請先在側邊欄填入您的臨時 Groq API Key 才能啟動本地測試。")
+        st.error("❌ 偵測不到密鑰！請先在左側欄填入您的臨時測試 Groq Key 才能啟動本地掃描。")
     else:
         with st.spinner(f"🌸 正在連線幣安交易所，同步抓取 3m、15m、1h、4h 真實價格與 RSI 指標..."):
             try:
                 # 初始化交易所
                 exchange = ccxt.binance()
                 
-                # 正確呼叫各週期的專屬函數
+                # 安全獲取四大週期實時數據
                 data_3m = fetch_single_timeframe_data(exchange, target_coin, "3m")
                 data_15m = fetch_single_timeframe_data(exchange, target_coin, "15m")
                 data_1h = fetch_single_timeframe_data(exchange, target_coin, "1h")
                 data_4h = fetch_single_timeframe_data(exchange, target_coin, "4h")
                 
-                # 快取實時價格供問答區使用
                 st.session_state.current_real_price = data_3m['price']
                 
                 # 數據看板呈現
@@ -216,7 +218,7 @@ if st.button("🌸 啟動四大週期聯動掃描"):
                 
                 st.success(f"✅ 真實行情聯動成功！已將當前最新市價 ${data_3m['price']} 發送至 AI 總監大腦進行精算。")
                 
-                # 呼叫多週期聯動 AI 生成報告
+                # 呼交多週期聯動大模型生成戰術報告
                 st.markdown("---")
                 st.subheader("🎯 AI 總監四維矩陣點位決策報告")
                 report = generate_multi_timeframe_report(
