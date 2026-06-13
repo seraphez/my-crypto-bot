@@ -75,28 +75,32 @@ leverage = 100
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**🔥 執行槓桿:** {leverage}x")
 
-# --- 🔒 終極安全金鑰隔離防禦機制 ---
-# 直接用原生 Python 反射機制繞過 st.secrets 的原生文件崩潰檢查
+# --- 🔒 終極安全金鑰避錯機制 (拋棄 st.secrets 直接調用，改用原生檢測) ---
 SAFE_GROQ_API_KEY = ""
 
-try:
-    # 讀取 Streamlit 運行時的內部保險箱狀態，繞過直接調用 st.secrets 的檔案死鎖
-    ctx = st.runtime.get_instance()._secrets_manager
-    if ctx is not None and "GROQ_API_KEY" in st.secrets:
-        SAFE_GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-except Exception:
-    # 本地 Codespaces 偵測不到 secrets 檔案時，直接無縫降級，絕不崩潰
-    SAFE_GROQ_API_KEY = ""
+# 先用原生 Python 偵測硬碟上有沒有 Streamlit 規定的 secrets.toml 檔案路徑
+# 這樣可以 100% 避免在 Codespaces 本地測試時觸發 Streamlit 的強制崩潰機制
+possible_secrets_path = os.path.expanduser("~/.streamlit/secrets.toml")
+local_project_secrets = os.path.join(os.getcwd(), ".streamlit", "secrets.toml")
 
-# 備用的作業系統環境變數檢查
+if os.path.exists(possible_secrets_path) or os.path.exists(local_project_secrets):
+    try:
+        # 只有確認檔案存在時，才允許去執行 st.secrets 讀取 (這是在線上版 Streamlit Cloud 的運行邏輯)
+        if "GROQ_API_KEY" in st.secrets:
+            SAFE_GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    except Exception:
+        SAFE_GROQ_API_KEY = ""
+
+# 備份機制：如果檔案不存在但操作系統有設定環境變數，直接讀取
 if not SAFE_GROQ_API_KEY:
     SAFE_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-# 如果保險箱完全為空 (在 Codespaces 本地測試環境下)，自動在網頁側邊欄開啟臨時輸入框，線上版會自動隱形
+# 完美本地相容防呆：如果上面兩種方法都拿不到金鑰 (代表處於 Codespaces 本地乾淨測試環境)
+# 自動在網頁左側開啟臨時輸入框供你偵錯，線上版部署後會因為讀到 Secrets 而自動完全隱形！
 if not SAFE_GROQ_API_KEY:
     st.sidebar.markdown("---")
-    st.sidebar.warning("🔑 偵測到本地開發環境，請填入臨時測試金鑰：")
-    temp_key = st.sidebar.text_input("臨時 Groq API Key", type="password")
+    st.sidebar.warning("🔑 偵測到本地開發環境：")
+    temp_key = st.sidebar.text_input("請填入臨時測試 Groq Key", type="password")
     if temp_key:
         SAFE_GROQ_API_KEY = temp_key
 
@@ -162,7 +166,7 @@ def generate_multi_timeframe_report(api_key, symbol, data_3m, data_15m, data_1h,
         ### 💰 三、 風險報酬與分批止盈藍圖
         - **第一目標止盈 (TP1 - 平倉 50%)**: (給出具體獲利點價格數字)
         - **第二爆發止盈 (TP2 - 全平離場)**: (給出具體獲利點價格數字)
-        - **本次戰術盈虧比評慢**: (計算盈虧比數字，並指出這筆交易是否符合高盈虧比邏輯)
+        - **本次戰術盈虧比評估**: (計算盈虧比數字，並指出這筆交易是否符合高盈虧比邏輯)
         
         ### 🦅 四、 總監鋼鐵心態控管
         （留下一句針對 {leverage}x 高槓桿操作，冷靜、孤高且充滿智慧的交易格言）
@@ -200,12 +204,14 @@ st.markdown(f"### 📍 當前掃描標的: `{target_coin}`")
 
 if st.button("🌸 啟動四大週期聯動掃描"):
     if not SAFE_GROQ_API_KEY:
-        st.error("❌ 偵測不到密鑰！請先在側邊欄填入您的臨時測試 Groq Key 才能啟動本地掃描。")
+        st.error("❌ 偵測不到密鑰！請先在左側欄填入您的臨時測試 Groq Key 才能啟動本地掃描。")
     else:
         with st.spinner(f"🌸 正在連線幣安交易所，同步抓取 3m、15m、1h、4h 真實價格與 RSI 指標..."):
             try:
+                # 初始化交易所
                 exchange = ccxt.binance()
                 
+                # 安全獲取四大週期實時數據
                 data_3m = fetch_single_timeframe_data(exchange, target_coin, "3m")
                 data_15m = fetch_single_timeframe_data(exchange, target_coin, "15m")
                 data_1h = fetch_single_timeframe_data(exchange, target_coin, "1h")
@@ -222,6 +228,7 @@ if st.button("🌸 啟動四大週期聯動掃描"):
                 
                 st.success(f"✅ 真實行情聯動成功！已將當前最新市價 ${data_3m['price']} 發送至 AI 總監大腦進行精算。")
                 
+                # 呼叫多週期聯動大模型生成戰術報告
                 st.markdown("---")
                 st.subheader("🎯 AI 總監四維矩陣點位決策報告")
                 report = generate_multi_timeframe_report(
