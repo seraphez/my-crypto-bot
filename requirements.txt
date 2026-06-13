@@ -1,8 +1,2 @@
 streamlit
-ccxt
-pandas
-pandas-ta
-scikit-learn
-openai
 groq
-plotly
