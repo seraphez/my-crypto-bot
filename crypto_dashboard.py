@@ -5,7 +5,7 @@ import pandas as pd
 import pandas_ta as ta
 from groq import Groq
 
-# --- 1. 🌸 櫻花風視覺自訂與頁面設定 (手機 centered 排版) ---
+# --- 1. 🌸 櫻花風視覺自訂與頁面設定 (手機優先 centered 排版) ---
 st.set_page_config(page_title="🌸 SMC 櫻花獵鯨網", layout="centered")
 
 # 使用 HTML/CSS 注入，將全站打造成高質感櫻花粉與曜石黑結合的操盤介面
@@ -82,18 +82,18 @@ if "GROQ_API_KEY" in st.secrets:
 else:
     SAFE_GROQ_API_KEY = ""
 
-# --- 3. 實時交易所數據撈取函數區 (安全、不卡死) ---
+# --- 3. 實時交易所數據撈取函數區 ---
 
 def fetch_single_timeframe_data(exchange, symbol, tf):
     """安全撈取單一週期的即時盤面數據"""
     try:
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe=tf, limit=50)
         df = pd.DataFrame(ohlcv, columns=['t', 'o', 'h', 'l', 'c', 'v'])
-        # 計算 RSI
+        # 計算實時 RSI
         df['rsi'] = ta.rsi(df['c'], length=14)
         latest = df.iloc[-1]
         
-        # 抓取近期區間的最高與最低
+        # 抓取 24 小時區間的最高與最低
         high_24h = df['h'].iloc[-24:].max()
         low_24h = df['l'].iloc[-24:].min()
         
@@ -103,7 +103,7 @@ def fetch_single_timeframe_data(exchange, symbol, tf):
             "high": round(high_24h, 4),
             "low": round(low_24h, 4)
         }
-    except:
+    except Exception:
         return {"price": "未知", "rsi": 50.0, "high": "未知", "low": "未知"}
 
 # --- 4. 核心大模型驅動函數區 (四大時間週期全維掃描) ---
