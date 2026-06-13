@@ -74,13 +74,20 @@ leverage = 100
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**🔥 執行槓桿:** {leverage}x")
-st.sidebar.markdown("🌸 *安全金鑰已鎖定於雲端加密保險箱*")
 
-# --- 🔒 安全金鑰隱形機制 ---
+# --- 🔒 安全金鑰隱形機制 + 本地相容防呆機制 ---
+# 解決 st.secrets 在本地環境找不到檔案會報錯的痛點
+SAFE_GROQ_API_KEY = ""
 if "GROQ_API_KEY" in st.secrets:
     SAFE_GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-else:
-    SAFE_GROQ_API_KEY = ""
+
+# 如果保險箱完全空的 (Codespaces 本地環境)，自動開啟臨時側邊欄輸入框，方便偵錯，線上版則完全隱形
+if not SAFE_GROQ_API_KEY:
+    st.sidebar.markdown("---")
+    st.sidebar.warning("🔑 偵測到本地環境，請輸入臨時 Key 進行測試：")
+    temp_key = st.sidebar.text_input("臨時 Groq API Key", type="password")
+    if temp_key:
+        SAFE_GROQ_API_KEY = temp_key
 
 # --- 3. 實時交易所數據撈取函數區 ---
 
@@ -182,7 +189,7 @@ st.markdown(f"### 📍 當前掃描標的: `{target_coin}`")
 
 if st.button("🌸 啟動四大週期聯動掃描"):
     if not SAFE_GROQ_API_KEY:
-        st.error("❌ 偵測不到密鑰！請確認您已在 Streamlit Cloud 後台設定好 GROQ_API_KEY。")
+        st.error("❌ 偵測不到密鑰！請先在側邊欄填入您的臨時 Groq API Key 才能啟動本地測試。")
     else:
         with st.spinner(f"🌸 正在連線幣安交易所，同步抓取 3m、15m、1h、4h 真實價格與 RSI 指標..."):
             try:
