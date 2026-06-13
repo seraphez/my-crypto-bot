@@ -93,7 +93,7 @@ def fetch_single_timeframe_data(exchange, symbol, tf):
         df['rsi'] = ta.rsi(df['c'], length=14)
         latest = df.iloc[-1]
         
-        # 抓取 24 小時區間的最高與最低
+        # 抓取近期區間的最高與最低
         high_24h = df['h'].iloc[-24:].max()
         low_24h = df['l'].iloc[-24:].min()
         
@@ -104,7 +104,6 @@ def fetch_single_timeframe_data(exchange, symbol, tf):
             "low": round(low_24h, 4)
         }
     except:
-        # 防呆備份機制
         return {"price": "未知", "rsi": 50.0, "high": "未知", "low": "未知"}
 
 # --- 4. 核心大模型驅動函數區 (四大時間週期全維掃描) ---
@@ -187,19 +186,15 @@ if st.button("🌸 啟動四大週期聯動掃描"):
     else:
         with st.spinner(f"🌸 正在連線幣安交易所，同步抓取 3m、15m、1h、4h 真實價格與 RSI 指標..."):
             try:
-                # 實時初始化 ccxt 撈取真實市場報價
                 exchange = ccxt.binance()
                 
-                # 同步撈取四大週期的實時價格與數據
                 data_3m = fetch_single_timeframe_data(exchange, target_coin, "3m")
                 data_15m = fetch_single_timeframe_data(exchange, target_coin, "15m")
                 data_1h = fetch_single_timeframe_data(exchange, target_coin, "1h")
                 data_4h = fetch_single_timeframe_data(exchange, target_coin, "4h")
                 
-                # 儲存最新的 3m 價格在畫面上，供下方問答區引用
                 st.session_state.current_real_price = data_3m['price']
                 
-                # 看板呈現最真實的即時報價
                 st.markdown("### 📊 幣安交易所即時行情")
                 col1, col2, col4 = st.columns(3)
                 col1.metric("當前實時市價", f"${data_3m['price']} USDT")
@@ -208,7 +203,6 @@ if st.button("🌸 啟動四大週期聯動掃描"):
                 
                 st.success(f"✅ 真實行情聯動成功！已將當前最新市價 ${data_3m['price']} 發送至 AI 總監大腦進行精算。")
                 
-                # 生成跨週期深度大模型戰術報告
                 st.markdown("---")
                 st.subheader("🎯 AI 總監四維矩陣點位決策報告")
                 report = generate_multi_timeframe_report(
